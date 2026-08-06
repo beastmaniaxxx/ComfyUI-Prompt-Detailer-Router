@@ -16,9 +16,16 @@
   - `DETAILER_PLAN`から対象タスクを選択して`detailer_prompt`を取得する
   - Analyzerの`scopes`入力からSelectorの候補を動的に更新する
 
+### 1.1 ルール
+
 本ファイルは実装時の強制ルールです。仕様や設計の詳細は、次の文書を参照してください。
 
 - `docs/requirements-design-reference.md`
+
+### 1.2 言語設定
+
+チャットでの応答は必ず日本語で行ってください。
+設計文書を、極力日本語で作成してください。
 
 ---
 
