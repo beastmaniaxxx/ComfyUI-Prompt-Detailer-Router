@@ -20,7 +20,7 @@
 
 本ファイルは実装時の強制ルールです。仕様や設計の詳細は、次の文書を参照してください。
 
-- `docs/requirements-design-reference.md`
+- `docs/requirements/requirements-design-reference.md`
 
 ### 1.2 言語設定
 
@@ -37,7 +37,7 @@
 2. cc-sddで承認済みの`design.md`
 3. cc-sddで承認済みの`tasks.md`
 4. 本ファイル
-5. `docs/requirements-design-reference.md`
+5. `docs/requirements/requirements-design-reference.md`
 6. 既存コードとテスト
 7. READMEや補足ドキュメント
 
