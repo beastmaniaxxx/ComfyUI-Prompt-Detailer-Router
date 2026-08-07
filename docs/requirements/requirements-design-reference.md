@@ -219,10 +219,12 @@ flowchart TD
 
     P --> SCOPE
     CFG --> SCOPE
+    CFG --> UPSCALE_BUILD
+    CFG --> PLAN_BUILD
 
     UPSCALE_BUILD --> UP["upscale_prompt<br/>STRING"]
     PLAN_BUILD --> PLAN["detailer_plan<br/>DETAILER_PLAN"]
-    VALIDATE --> JSON["detailer_json<br/>STRING"]
+    PLAN_BUILD --> JSON["detailer_json<br/>STRING<br/>from finalized plan via JSON codec"]
     VALIDATE --> WARN["warning / diagnostics"]
 
     UP --> UENC["CLIP Text Encode"]
@@ -238,12 +240,16 @@ flowchart TD
     SH --> HP["hair_prompt"]
     SA --> AP["hands_prompt"]
 
+    HP --> HENC["CLIP Text Encode<br/>hair CONDITIONING"]
+    FP --> FENC["CLIP Text Encode<br/>face CONDITIONING"]
+    AP --> AENC["CLIP Text Encode<br/>hands CONDITIONING"]
+
     UIMG --> HD["Hair Detailer"]
-    HP --> HD
+    HENC --> HD
     HD --> FD["Face Detailer"]
-    FP --> FD
+    FENC --> FD
     FD --> AD["Hands Detailer"]
-    AP --> AD
+    AENC --> AD
     AD --> OUT["Preview / Save Image"]
 
     PLAN --> INSPECT["Plan Inspector"]
@@ -628,7 +634,9 @@ main.hands
 - Selectorの`DETAILER_PLAN`入力からAnalyzerを探す
 - Analyzerの`scopes`ウィジェットを読む
 - カンマ区切りを解析する
-- `main.<scope>`を候補として設定する
+- Python側と同じ規則で正規化し、初期対応scopeと照合する
+- 未対応scopeは候補から除外し、必要に応じてUI上のwarningまたはconsole診断へ記録する
+- 対応scopeだけを`main.<scope>`候補として設定する
 
 ### Python
 
@@ -638,12 +646,22 @@ main.hands
 
 ## 11.5 missing behavior
 
-- `error`
-- `empty`
-- `first_matching_scope`
-- `first_available`
+- `error`: 存在しない`task_id`をエラーとして扱い、実行を失敗させる
+- `empty`: `found=false`、空の`detailer_prompt`、warningを返す
+- `first_matching_scope`: 入力`task_id`からscopeを導出し、同じscopeの有効taskを返す
+- `first_available`: Plan内の先頭有効taskを返す
 
 初期値は`error`を推奨します。
+
+`first_matching_scope`の規則:
+
+1. 入力`task_id`が`subject.scope`形式なら、最後の`.`より後ろをscope候補として扱う
+2. scope候補を小文字化し、対応scopeと照合する
+3. Plan内の`enabled=true`かつ同じ`scope`のtaskだけを候補にする
+4. 候補が複数ある場合は`order`の昇順、同じ`order`ではPlan内の出現順で決定する
+5. scopeを導出できない、未対応scope、または該当taskがない場合は`empty`と同じ出力にwarningを付ける
+
+`first_available`は`enabled=true`のtaskを`order`の昇順、同じ`order`ではPlan内の出現順で選択します。該当taskがない場合は`empty`と同じ出力にwarningを付けます。
 
 ---
 
@@ -889,6 +907,14 @@ sequenceDiagram
         A->>O: Repair request
         O-->>A: Repaired JSON
         A->>V: Revalidate
+        alt Repaired valid
+            V-->>A: PromptAnalysis
+            A->>B: Build upscale prompt and DetailerPlan
+            B-->>A: upscale_prompt, DETAILER_PLAN
+            A-->>U: Outputs
+        else Repaired invalid
+            A-->>U: Safe fallback or explicit error + warning
+        end
     else Fallback
         A-->>U: Safe fallback + warning
     end
@@ -907,6 +933,7 @@ sequenceDiagram
 - `original_prompt`
 - normalized scopes
 - `subject_hint`
+- normalized `ollama_url`または同等のserver identifier
 - Ollama model
 - seed
 - temperature
@@ -1010,6 +1037,10 @@ sequenceDiagram
 - face prompt
 - hair prompt
 - hands prompt
+- body prompt
+- upper_body prompt
+- clothing prompt
+- generic prompt
 - warnings
 
 ## 19.6 テスト用プロンプト
@@ -1351,7 +1382,7 @@ cc-sddのrequirements作成時に決定すべき事項です。
 2. V3 Schemaのみか、Legacy互換も持たせるか
 3. HTTPクライアントに標準ライブラリを使うか外部依存を使うか
 4. JSON Schemaライブラリを追加するか
-5. `prompt_final`空文字を許容するか
+5. `enabled=false`のtaskで`prompt_final`空文字を許容するか
 6. 未対応scopeをerrorにするかwarningにするか
 7. `requested_scopes`の順序を処理順として扱うか
 8. `order`の既定値
