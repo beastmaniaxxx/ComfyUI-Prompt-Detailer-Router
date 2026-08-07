@@ -161,12 +161,24 @@ domainはComfyUI、Ollama、ファイルシステムへ依存しない
       "subject_id": "main",
       "scope": "face",
       "extracted_features": [
-        "dark brown eyes",
+        "dark brown eyes"
+      ],
+      "prompt_core": "dark brown eyes",
+      "prompt_final": "Completed face detailer prompt.",
+      "order": 30,
+      "enabled": true,
+      "warnings": []
+    },
+    {
+      "task_id": "main.hair",
+      "subject_id": "main",
+      "scope": "hair",
+      "extracted_features": [
         "short black hair"
       ],
-      "prompt_core": "dark brown eyes, short black hair",
-      "prompt_final": "Completed detailer prompt.",
-      "order": 30,
+      "prompt_core": "short black hair",
+      "prompt_final": "Completed hair detailer prompt.",
+      "order": 20,
       "enabled": true,
       "warnings": []
     }

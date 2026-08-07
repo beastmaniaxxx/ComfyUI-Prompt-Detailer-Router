@@ -246,8 +246,9 @@ flowchart TD
     AP --> AD
     AD --> OUT["Preview / Save Image"]
 
-    JSON --> INSPECT["Plan Inspector / Text Preview"]
-    WARN --> INSPECT
+    PLAN --> INSPECT["Plan Inspector"]
+    JSON --> JSONVIEW["Text Preview / JSON Preview"]
+    WARN --> WARNVIEW["Text Preview / Diagnostics"]
 ```
 
 ## 6.1 処理順の考え方
@@ -375,7 +376,8 @@ ComfyUI-Prompt-Detailer-Router/
 │  └─ smoke_test_ollama.py
 │
 ├─ docs/
-│  ├─ requirements-design-reference.md
+│  ├─ requirements/
+│  │  └─ requirements-design-reference.md
 │  ├─ architecture.md
 │  ├─ detailer-plan-schema.md
 │  ├─ ollama-integration.md
