@@ -663,6 +663,17 @@ main.hands
 
 `first_available`は`enabled=true`のtaskを`order`の昇順、同じ`order`ではPlan内の出現順で選択します。該当taskがない場合は`empty`と同じ出力にwarningを付けます。
 
+fallbackで代替taskを返す場合:
+
+- `found`: 代替taskを返せた場合は`true`、返せなかった場合は`false`
+- `detailer_prompt`: 実際に返したtaskの`prompt_final`
+- `scope`: 実際に返したtaskの`scope`
+- `subject_id`: 実際に返したtaskの`subject_id`
+- `task_id`: 実際に返したtaskの`task_id`
+- `warning`: 要求された`task_id`が見つからず、どの規則でどの代替taskを返したかを含める
+
+`found`は「要求された`task_id`が完全一致したか」ではなく、「有効なtaskを返せたか」を示します。完全一致しなかった事実は`warning`で表現します。
+
 ---
 
 # 12. Ollama連携
@@ -679,12 +690,17 @@ main.hands
     },
     {
       "role": "user",
-      "content": "SCOPES: face,hair\nORIGINAL_PROMPT: ..."
+      "content": "SCOPES: face,hair\nSUBJECT_HINT: main subject\nORIGINAL_PROMPT: ..."
     }
   ],
   "format": {
     "type": "object",
-    "properties": {}
+    "properties": {
+      "global": { "type": "object" },
+      "scoped_features": { "type": "object" },
+      "warnings": { "type": "array" }
+    },
+    "required": ["global", "scoped_features"]
   },
   "stream": false,
   "think": false,
@@ -696,6 +712,10 @@ main.hands
   }
 }
 ```
+
+上記の`format`は概念例です。実装では空のSchemaを渡さず、`ollama_response_v1.schema.json`の実際の`properties`、`required`、追加フィールド方針を渡します。
+
+`subject_hint`は主被写体の曖昧さを減らす補助情報としてLLM payloadへ含めます。ただし、元プロンプトにない特徴を補完する根拠には使わず、抽出対象の優先順位付けと警告生成の補助に限定します。空文字の場合は`SUBJECT_HINT`を省略するか、空として扱います。
 
 ## 12.2 LLMの責務
 
@@ -761,7 +781,7 @@ Photorealistic photography with soft window lighting, warm color temperature, sh
 - skin
 - expression
 - gaze
-- hairstyleの必要最小限
+- 必要に応じてhairline（髪色、長さ、髪型はhair scopeで扱う）
 
 追加プリセット例:
 
@@ -903,6 +923,8 @@ sequenceDiagram
         A->>B: Build upscale prompt and DetailerPlan
         B-->>A: upscale_prompt, DETAILER_PLAN
         A-->>U: Outputs
+    else Invalid and failure_mode=strict
+        A-->>U: Explicit error + warning / diagnostics
     else Invalid and retry enabled
         A->>O: Repair request
         O-->>A: Repaired JSON
@@ -912,11 +934,13 @@ sequenceDiagram
             A->>B: Build upscale prompt and DetailerPlan
             B-->>A: upscale_prompt, DETAILER_PLAN
             A-->>U: Outputs
-        else Repaired invalid
-            A-->>U: Safe fallback or explicit error + warning
+        else Repaired invalid and failure_mode=strict
+            A-->>U: Explicit error + warning / diagnostics
+        else Repaired invalid and fallback enabled
+            A-->>U: Safe fallback + warning / diagnostics
         end
-    else Fallback
-        A-->>U: Safe fallback + warning
+    else Invalid and fallback enabled
+        A-->>U: Safe fallback + warning / diagnostics
     end
 
     U->>S: DETAILER_PLAN + selected task_id
@@ -1321,6 +1345,8 @@ Analyzer scopes
 - ワークフロー別preset
 - 画像解析併用
 
+複数人物対応はv1対象外とし、別specで`subject_id`定義、`task_id`衝突規則、人物別UI候補同期、既存workflowとの互換性を再検討します。v1の`subject_id`は既定で`main`を使用します。
+
 ---
 
 # 26. cc-sdd開始時に渡す概要例
@@ -1390,12 +1416,11 @@ cc-sddのrequirements作成時に決定すべき事項です。
 10. fallback時に元プロンプトをどの程度利用するか
 11. diagnosticsの公開項目
 12. キャッシュ無効化方法
-13. 複数人物対応をv1に含めるか
-14. Ollama URLの許容範囲
-15. 動的コンボが取得できない場合のUI
-16. presetのユーザー上書き方法
-17. Registry公開時の依存関係
-18. ライセンス
+13. Ollama URLの許容範囲
+14. 動的コンボが取得できない場合のUI
+15. presetのユーザー上書き方法
+16. Registry公開時の依存関係
+17. ライセンス
 
 ---
 
