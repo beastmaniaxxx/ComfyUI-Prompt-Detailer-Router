@@ -43,7 +43,7 @@
 
 ## 3. Domain 層（純粋ロジック）
 
-- [ ] 3.1 (P) scope 正規化と対応 scope 検証を実装する
+- [x] 3.1 (P) scope 正規化と対応 scope 検証を実装する
   - 分割 → 前後空白削除 → 小文字化 → 空要素除去 → 入力初出順を保持した重複除去 → 対応 scope 照合の順で正規化する
   - 未対応 scope は `requested_scopes` から除外して破棄し、破棄した scope 名を含む warning を生成する。処理は失敗させない
   - 空入力・有効 scope ゼロ時は空の scope 列と warning を返す
@@ -51,13 +51,13 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3_
   - _Boundary: domain/scopes.py_
 
-- [ ] 3.2 (P) scope 別既定 order 表を実装する
+- [x] 3.2 (P) scope 別既定 order 表を実装する
   - reference §14.4 の既定値（`hair`=20・`face`=30・`hands`=40・`upper_body`=50・`body`=60・`clothing`=70・`generic`=90）を定数として提供する
   - 観測可能な完了条件: 各 scope に対する既定 order が定数から取得でき、unit test で表と一致する
   - _Requirements: 10.7_
   - _Boundary: domain/order_defaults.py_
 
-- [ ] 3.3 domain model と Plan 整合の不変条件検証を実装する
+- [x] 3.3 domain model と Plan 整合の不変条件検証を実装する
   - `DetailerTask`・`DetailerPlan` を不変オブジェクトとして定義し、必須フィールドと `schema_version` を保持する
   - `task_id = subject_id + "." + scope`（既定 `subject_id=main`）を生成し、同一 `subject_id+scope` を 1 件に制限し Plan 内一意にする
   - 不変条件検証（`scope ∈ requested_scopes`／`enabled=true ⇒ prompt_final 非空`／`enabled=false ⇒ 空許容`／要求 scope ごとに 1 件以上の enabled task）を純粋関数で提供し、違反を構造化して列挙する
@@ -66,21 +66,21 @@
   - _Depends: 3.1, 3.2_
   - _Boundary: domain/detailer_plan.py_
 
-- [ ] 3.4 (P) 検証済み抽出結果 model（PromptAnalysis）を実装する
+- [x] 3.4 (P) 検証済み抽出結果 model（PromptAnalysis）を実装する
   - `global_features`・`scoped_features`（正規化 scope キー）・`warnings` を不変で保持し、scope 別特徴取得のアクセサを提供する
   - 供給元（Ollama／fixture／From JSON）に依存しない domain 型として定義し、実通信は保持しない
   - 観測可能な完了条件: fixture データから `PromptAnalysis` を構築し、指定 scope の特徴を取り出す unit test が通る
   - _Requirements: 6.1, 13.3_
   - _Boundary: domain/prompt_analysis.py_
 
-- [ ] 3.5 (P) 禁止語除去と prompt テキストヘルパを実装する
+- [x] 3.5 (P) 禁止語除去と prompt テキストヘルパを実装する
   - 大文字小文字を無視した literal 一致で禁止語を除去し、除去後に空白を正規化し、除去語数と対象語を返す（検出を LLM に委任しない）
   - prompt 結合（空要素除去）・特徴の順序保持重複除去・空白正規化の純粋ヘルパを提供する
   - 観測可能な完了条件: `beautiful/Perfect/SYMMETRICAL` を含む文字列が除去 + 空白正規化され、`removed_count` が正しい unit test が通る
   - _Requirements: 9.2, 9.3, 9.5_
   - _Boundary: domain/forbidden_terms.py, domain/prompt_text.py, utils/collections.py_
 
-- [ ] 3.6 (P) error 階層を実装する
+- [x] 3.6 (P) error 階層を実装する
   - 基底エラーの下に user 向け（設定不備・JSON 復号失敗・Plan 検証失敗）と内部エラーを区別して定義する
   - 観測可能な完了条件: 各エラー型が基底から派生し、user 向け／内部の区別が unit test で確認できる
   - _Requirements: 14.3_
@@ -177,3 +177,6 @@
 - **リソースアクセス**: `resources` は package（`__init__.py` あり）だが `schemas/`・`presets/`・`policies/` サブディレクトリは package ではない。`importlib.resources.files("prompt_detailer_router.resources").joinpath("schemas", "detailer_plan_v1.schema.json")` の形で親 package から辿ること（loader タスク 4.1/4.2/4.3 で踏襲）。
 - **profile mapping 値 = detailer preset ファイル名 stem**（scope 名と一致、例 `"face": "face"`）。design の File Structure（`detailer/face.json`）に合わせた確定仕様で、reference §14.3 の例示 `"face_v1"` とは異なる。preset_loader（4.2）は mapping 値を `detailer/<value>.json` として解決し、その `scope` が key と一致することを検証する。
 - **開発依存**: `jsonschema>=4.20,<5`（インストール済み 4.26.0）は infra 限定。テストは `python -m pytest -q` で実行。
+- **禁止語マッチ**: `apply_forbidden_terms` は `case_insensitive_literal` を**単語境界（`\b`）付き**で解釈し、`imperfect` から `perfect` を削らない。builder（5.1/5.2）と snapshot（6.3）はこの語単位除去を前提にする。除去後は空白正規化される。
+- **domain 純粋性**: `tests/unit/test_domain_purity.py` が domain 配下の `jsonschema`/`requests`/`comfy` 等 import を静的に禁止。infra loader（4.x）でのみ `jsonschema` を使う。
+- **validate_plan は非 raise**: domain の `validate_plan` は `PlanValidationIssue` を列挙して返すのみ。user 向け `PlanValidationError` への昇格は application（5.3）が担う。
