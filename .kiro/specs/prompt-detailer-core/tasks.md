@@ -121,7 +121,7 @@
 
 ## 5. Application 層（Builder と検証ユースケース）
 
-- [ ] 5.1 (P) Upscale Prompt Builder を実装する
+- [x] 5.1 (P) Upscale Prompt Builder を実装する
   - 抽出済み画風・照明・材質・カメラ・背景情報に、upscale preset の品質向上指示・維持指示・制限を結合する
   - 元プロンプトにない被写体特徴を追加せず、結合確定後に禁止語検査を適用し、同一入力・同一 preset version で同一出力を返す
   - 観測可能な完了条件: fixture 入力から決定論的な `upscale_prompt` を生成し、被写体特徴が混入しない unit test が通る
@@ -129,7 +129,7 @@
   - _Depends: 3.4, 3.5, 4.2, 4.3_
   - _Boundary: application/build_upscale_prompt.py_
 
-- [ ] 5.2 (P) Detailer Plan Builder を実装する
+- [x] 5.2 (P) Detailer Plan Builder を実装する
   - 各要求 scope について、抽出特徴があれば scope 別 preset と結合して `prompt_final` を構築し、無ければ preset のみの非空 fallback task（`extracted_features` 空・`enabled=true`）を生成して plan warning に記録する
   - 抽出結果の `task_id`／`prompt_final`／維持文／局所文を採用せず、元プロンプトにない具体属性を追加しない。`order` は preset の `default_order`、無ければ既定 order 表を用いる
   - `prompt_final` 確定後に禁止語検査を適用し、最後に Plan 整合の不変条件検証を通す
@@ -138,7 +138,7 @@
   - _Depends: 3.2, 3.3, 3.4, 3.5, 4.2, 4.3_
   - _Boundary: application/build_detailer_plan.py_
 
-- [ ] 5.3 (P) Plan 整合検証ユースケースを実装する
+- [x] 5.3 (P) Plan 整合検証ユースケースを実装する
   - domain の不変条件検証を呼び出し、違反を user 向けエラーへ昇格する薄いユースケースとして提供し、検証ロジックを二重化しない
   - 観測可能な完了条件: 不整合 Plan で user 向けエラーが送出され、整合 Plan では成功する unit test が通る
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
@@ -182,3 +182,5 @@
 - **validate_plan は非 raise**: domain の `validate_plan` は `PlanValidationIssue` を列挙して返すのみ。user 向け `PlanValidationError` への昇格は application（5.3）が担う。
 - **infra loader の入口**（5.1/5.2 で利用）: `preset_loader.load_detailer_profile()`（既定 `default_v1`、mapping 先の存在と scope 一致を検証）／`load_detailer_preset(scope)`／`load_upscale_preset(id)`／`policy_loader.load_forbidden_terms_policy()`／`json_codec.encode_plan`。preset に `default_order` が無ければ `order_defaults` を使う。
 - **json_codec の直列化**: `ensure_ascii=False, indent=2`、キー順は schema 準拠で固定（往復同値・snapshot 安定）。decode は Tier1(schema)→Tier2(`validate_plan`)。
+- **prompt_final の合成テンプレ**（6.3 snapshot が固定）: detailer = `join_prompt([feature_clause, preservation, local_details, restrictions])`（`feature_clause="Keep the described <features>."`、fallback は空）→ 禁止語除去。upscale = `join_prompt([global記述子, quality_details, preservation, restrictions])`→ 禁止語除去。global 記述子は `UPSCALE_GLOBAL_ORDER`（medium,style,lighting,camera,material,texture,environment,subject）順で dedup。
+- **prompt_core は禁止語フィルタ対象外**（Req 9.2 は prompt_final/upscale_prompt のみ）。scope 限定は `features_for_scope(scope)` + scope preset のみ使用で担保。
