@@ -98,7 +98,7 @@ Pythonバックエンドの責務:
 - `detailer_plan: DETAILER_PLAN`
 - `detailer_json: STRING`
 - `warning: STRING`
-- 必要に応じて`diagnostics: STRING`
+- `diagnostics: STRING`
 
 `face_prompt`、`hair_prompt`などの固定出力は、本体Analyzerではなく補助Unpackノードで提供してください。
 
@@ -257,9 +257,11 @@ scopeの追加は、次を同一変更で更新してください。
 - `subject_hint: STRING`
 - `ollama_url: STRING`
 - `ollama_model: STRING`
-- `preset: COMBOまたはSTRING`
+- `upscale_preset: COMBOまたはSTRING`
+- `detailer_preset_profile: COMBOまたはSTRING`
 - `seed: INT`
 - `temperature: FLOAT`
+- `timeout: FLOAT`
 - `keep_alive: STRING`
 - `failure_mode: COMBO`
 

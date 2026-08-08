@@ -213,7 +213,7 @@ LLM Text Processor由来のJSONを、最終`DETAILER_PLAN`として直接信頼�
 flowchart TD
     P["元画像の生成プロンプト<br/>STRING"]
     IMG["元画像<br/>IMAGE"]
-    CFG["Analyzer設定<br/>scopes / model / seed<br/>upscale_preset / detailer_preset_profile"]
+    CFG["Analyzer設定<br/>scopes / model / seed / timeout<br/>upscale_preset / detailer_preset_profile"]
 
     subgraph ANALYZER["PDR Ollama Prompt Analyzer"]
         SCOPE["scope正規化"]
@@ -243,7 +243,8 @@ flowchart TD
     UPSCALE_BUILD --> UP["upscale_prompt<br/>STRING"]
     PLAN_BUILD --> PLAN["detailer_plan<br/>DETAILER_PLAN"]
     PLAN_BUILD --> JSON["detailer_json<br/>STRING<br/>from finalized plan via JSON codec"]
-    WARN_COLLECT --> WARN["warning / diagnostics"]
+    WARN_COLLECT --> WARN["warning<br/>STRING"]
+    WARN_COLLECT --> DIAG["diagnostics<br/>STRING"]
 
     UP --> UENC["CLIP Text Encode"]
     UENC --> USD["Ultimate SD Upscale"]
@@ -564,8 +565,9 @@ class DetailerPlan:
 - すべての`tasks[].scope`は`requested_scopes`に含まれていなければならない
 - `requested_scopes`に含まれないscopeのtaskはSchemaまたはValidatorで拒否する
 - `requested_scopes`は正規化済みscopeの重複なし配列とする
-- v1では、要求scopeごとにtaskが必ず存在することまでは要求しない
-- 要求scopeに対応するtaskが欠落した場合はPlan-level warningへ記録する
+- v1では、要求scopeごとに少なくとも1つの`enabled=true` taskを必須とする
+- LLM抽出結果に要求scopeの情報が欠落した場合、Plan Builderはそのscopeのfallback taskを生成し、Plan-level warningへ記録する
+- Analyzerと`PDR_DetailerPlanFromJSON`の`llm_extraction_json`経路は、同じPlan Builder規則で要求scopeごとのtaskを保証する
 - `safe_fallback`では、要求scopeごとに`enabled=true`のfallback taskを生成して欠落を補完する
 - v1のPlan Schemaはrootとtaskの両方で`additionalProperties: false`相当とし、未知フィールドを拒否する
 - JSON codecは未知フィールドを黙って破棄しない
@@ -679,11 +681,20 @@ main.hands
 ## 11.5 missing behavior
 
 - `error`: 存在しない`task_id`をエラーとして扱い、実行を失敗させる
-- `empty`: `found=false`、空の`detailer_prompt`、warningを返す
+- `empty`: 代替taskを返さず、下記のempty出力を返す
 - `first_matching_scope`: 入力`task_id`からscopeを導出し、同じscopeの有効taskを返す
 - `first_available`: Plan内の有効taskを`order`昇順で選んで返す
 
 初期値は`error`を推奨します。
+
+`empty`の出力:
+
+- `found`: `false`
+- `detailer_prompt`: 空文字
+- `scope`: 空文字
+- `subject_id`: 空文字
+- `task_id`: 要求された入力`task_id`
+- `warning`: 要求された`task_id`が見つからない、または無効taskだったため空出力を返した理由
 
 `first_matching_scope`の規則:
 
@@ -1078,6 +1089,7 @@ fallback taskの`extracted_features`は空配列、`prompt_core`はscope別の�
 - Ollama model
 - seed
 - temperature
+- normalized timeout
 - failure_mode
 - system prompt version
 - Schema version
@@ -1560,6 +1572,7 @@ upscale_prompt
 DETAILER_PLAN
 detailer_json
 warning
+diagnostics
         ↓
 PDR_DetailerPlanSelect
         ↓
