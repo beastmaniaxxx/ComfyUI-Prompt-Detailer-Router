@@ -201,6 +201,8 @@ From JSONは2種類の入力を区別します。
 
 入力形式は`input_kind` COMBOで明示的に選択します。初期値は`llm_extraction_json`とし、JSON形状による自動判定は行いません。`finalized_plan_json`は本パッケージが生成した信頼済みPlan JSONを再読込する用途に限定し、LLM Text Processorの出力をこのモードへ渡さないでください。
 
+`llm_extraction_json`では、From JSONノードが`preset`入力を持ち、指定されたversion付きpresetをPlan Builderへ渡します。初期値はAnalyzerと同じ既定presetにします。preset名やpreset versionをLLM出力から推定せず、使用したpresetはdiagnosticsまたはPlan warningで確認できるようにします。
+
 LLM Text Processor由来のJSONを、最終`DETAILER_PLAN`として直接信頼しません。LLMが生成した`task_id`、`prompt_final`、維持指示、局所ディテールは採用せず、Python側の決定工程を必ず通します。
 
 ---
@@ -234,6 +236,7 @@ flowchart TD
 
     P --> SCOPE
     CFG --> SCOPE
+    CFG --> OLLAMA
     CFG --> UPSCALE_BUILD
     CFG --> PLAN_BUILD
 
@@ -564,6 +567,9 @@ class DetailerPlan:
 - v1では、要求scopeごとにtaskが必ず存在することまでは要求しない
 - 要求scopeに対応するtaskが欠落した場合はPlan-level warningへ記録する
 - `safe_fallback`では、要求scopeごとに`enabled=true`のfallback taskを生成して欠落を補完する
+- v1のPlan Schemaはrootとtaskの両方で`additionalProperties: false`相当とし、未知フィールドを拒否する
+- JSON codecは未知フィールドを黙って破棄しない
+- 将来拡張フィールドは`schema_version`更新または明示的な`metadata`フィールド追加として扱う
 
 これにより、UI候補が`requested_scopes`から作られる場合でも、Selectorが利用できるtask scopeと食い違わないようにします。
 
@@ -941,6 +947,8 @@ Planの内容を人間向けテキストで表示します。
 
 `input_kind` COMBOで`finalized_plan_json`または`llm_extraction_json`を明示的に選択します。JSONの形状による自動判定は行わず、完成済みPlan JSONとLLM抽出JSONを混同しません。LLM抽出JSONを扱う場合は、Analyzerと同じPython側のValidator / Plan Builder / preset適用工程を通して`DETAILER_PLAN`を生成します。
 
+`llm_extraction_json`では`preset`入力を必須とし、未指定時はAnalyzerと同じ既定presetを使います。LLM出力内のpreset指定は信頼せず、Python側の入力値だけをPlan Builderへ渡します。
+
 ## Phase 2以降
 
 ### `PDR_DetailerPlanOverride`
@@ -1063,6 +1071,7 @@ fallback taskの`extracted_features`は空配列、`prompt_core`はscope別の�
 - Ollama model
 - seed
 - temperature
+- failure_mode
 - system prompt version
 - Schema version
 - preset name
