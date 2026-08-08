@@ -192,7 +192,14 @@ OllamaがSchema違反のレスポンスを返した場合:
 
 ## UC-06: LLM Text Processor互換
 
-既存のLLM Text Processorで生成したJSONを、`Detailer Plan From JSON`で`DETAILER_PLAN`へ変換できます。
+既存のLLM Text Processorで生成したJSONを、`Detailer Plan From JSON`でPython側のPlan生成工程へ渡せます。
+
+From JSONは2種類の入力を区別します。
+
+- `finalized_plan_json`: 本パッケージのJSON codecが完成済み`DETAILER_PLAN`から直列化したJSONだけを受け付け、Plan Schema検証後に復号する
+- `llm_extraction_json`: LLMの抽出結果Schemaとして検証し、scope正規化、`task_id`生成、preset適用、禁止語検査、`prompt_final`決定をPython側のPlan Builderで実行する
+
+LLM Text Processor由来のJSONを、最終`DETAILER_PLAN`として直接信頼しません。LLMが生成した`task_id`、`prompt_final`、維持指示、局所ディテールは採用せず、Python側の決定工程を必ず通します。
 
 ---
 
@@ -210,11 +217,16 @@ flowchart TD
         VALIDATE["Structured Output検証"]
         UPSCALE_BUILD["Upscale Prompt Builder"]
         PLAN_BUILD["Detailer Plan Builder"]
+        WARN_COLLECT["warning / diagnostics集約"]
 
         SCOPE --> OLLAMA
         OLLAMA --> VALIDATE
         VALIDATE --> UPSCALE_BUILD
         VALIDATE --> PLAN_BUILD
+        SCOPE --> WARN_COLLECT
+        VALIDATE --> WARN_COLLECT
+        UPSCALE_BUILD --> WARN_COLLECT
+        PLAN_BUILD --> WARN_COLLECT
     end
 
     P --> SCOPE
@@ -225,7 +237,7 @@ flowchart TD
     UPSCALE_BUILD --> UP["upscale_prompt<br/>STRING"]
     PLAN_BUILD --> PLAN["detailer_plan<br/>DETAILER_PLAN"]
     PLAN_BUILD --> JSON["detailer_json<br/>STRING<br/>from finalized plan via JSON codec"]
-    VALIDATE --> WARN["warning / diagnostics"]
+    WARN_COLLECT --> WARN["warning / diagnostics"]
 
     UP --> UENC["CLIP Text Encode"]
     UENC --> USD["Ultimate SD Upscale"]
@@ -649,7 +661,7 @@ main.hands
 - `error`: 存在しない`task_id`をエラーとして扱い、実行を失敗させる
 - `empty`: `found=false`、空の`detailer_prompt`、warningを返す
 - `first_matching_scope`: 入力`task_id`からscopeを導出し、同じscopeの有効taskを返す
-- `first_available`: Plan内の先頭有効taskを返す
+- `first_available`: Plan内の有効taskを`order`昇順で選んで返す
 
 初期値は`error`を推奨します。
 
@@ -661,7 +673,7 @@ main.hands
 4. 候補が複数ある場合は`order`の昇順、同じ`order`ではPlan内の出現順で決定する
 5. scopeを導出できない、未対応scope、または該当taskがない場合は`empty`と同じ出力にwarningを付ける
 
-`first_available`は`enabled=true`のtaskを`order`の昇順、同じ`order`ではPlan内の出現順で選択します。該当taskがない場合は`empty`と同じ出力にwarningを付けます。
+`first_available`はPlan配列の先頭ではなく、`enabled=true`のtaskを`order`の昇順、同じ`order`ではPlan内の出現順で選択します。該当taskがない場合は`empty`と同じ出力にwarningを付けます。
 
 fallbackで代替taskを返す場合:
 
@@ -826,6 +838,39 @@ Preserve the original garment shape, fit, color, pattern, accessories, and folds
 
 # 14. プリセット設計
 
+Upscale presetとDetailer presetは別Schemaとして扱います。
+
+## 14.1 Upscale preset
+
+例:
+
+```json
+{
+  "version": "1.0",
+  "preset_id": "photographic",
+  "quality_details": "Refine natural texture, clean contours, and coherent fine detail...",
+  "preservation": "Keep the original composition, subject placement, pose, identity, and lighting unchanged.",
+  "restrictions": "Do not redesign the subject or introduce unstated attributes."
+}
+```
+
+必須項目:
+
+- `version`
+- `preset_id`
+- `quality_details`
+- `preservation`
+- `restrictions`
+
+検討項目:
+
+- `style_tags`
+- `forbidden_terms`
+- `applicable_media`
+- `suffix`
+
+## 14.2 Detailer preset
+
 例:
 
 ```json
@@ -876,6 +921,8 @@ Planの内容を人間向けテキストで表示します。
 
 既存JSONをPlanへ変換します。
 
+受け入れるJSONの種類を明示し、完成済みPlan JSONとLLM抽出JSONを混同しません。LLM抽出JSONを扱う場合は、Analyzerと同じPython側のValidator / Plan Builder / preset適用工程を通して`DETAILER_PLAN`を生成します。
+
 ## Phase 2以降
 
 ### `PDR_DetailerPlanOverride`
@@ -916,37 +963,64 @@ sequenceDiagram
     U->>A: original_prompt, scopes, settings
     A->>A: Normalize scopes
     A->>O: /api/chat + JSON Schema
-    O-->>A: Structured JSON
-    A->>V: Validate response
-    alt Valid
-        V-->>A: PromptAnalysis
-        A->>B: Build upscale prompt and DetailerPlan
-        B-->>A: upscale_prompt, DETAILER_PLAN
-        A-->>U: Outputs
-    else Invalid and failure_mode=strict
-        A-->>U: Explicit error + warning / diagnostics
-    else Invalid and retry enabled
-        A->>O: Repair request
-        O-->>A: Repaired JSON
-        A->>V: Revalidate
-        alt Repaired valid
+
+    alt Ollama response available
+        O-->>A: Structured JSON
+        A->>V: Validate response
+        alt Valid
             V-->>A: PromptAnalysis
             A->>B: Build upscale prompt and DetailerPlan
             B-->>A: upscale_prompt, DETAILER_PLAN
             A-->>U: Outputs
-        else Repaired invalid and failure_mode=strict
+        else Invalid and failure_mode=strict
             A-->>U: Explicit error + warning / diagnostics
-        else Repaired invalid and fallback enabled
+        else Invalid and failure_mode=retry_once
+            A->>O: Repair request
+            O-->>A: Repaired JSON
+            A->>V: Revalidate
+            alt Repaired valid
+                V-->>A: PromptAnalysis
+                A->>B: Build upscale prompt and DetailerPlan
+                B-->>A: upscale_prompt, DETAILER_PLAN
+                A-->>U: Outputs
+            else Repaired invalid or retry response unusable
+                A-->>U: Explicit error + warning / diagnostics
+            end
+        else Invalid and failure_mode=safe_fallback
             A-->>U: Safe fallback + warning / diagnostics
         end
-    else Invalid and fallback enabled
-        A-->>U: Safe fallback + warning / diagnostics
+    else Ollama request failed or empty response
+        alt failure_mode=strict
+            A-->>U: Explicit error + warning / diagnostics
+        else failure_mode=retry_once and retryable
+            A->>O: Retry /api/chat once
+            alt Retry response available
+                O-->>A: Structured JSON
+                A->>V: Validate response
+                alt Retry valid
+                    V-->>A: PromptAnalysis
+                    A->>B: Build upscale prompt and DetailerPlan
+                    B-->>A: upscale_prompt, DETAILER_PLAN
+                    A-->>U: Outputs
+                else Retry invalid
+                    A-->>U: Explicit error + warning / diagnostics
+                end
+            else Retry failed or empty
+                A-->>U: Explicit error + warning / diagnostics
+            end
+        else failure_mode=safe_fallback
+            A-->>U: Safe fallback + warning / diagnostics
+        else Non-retryable failure
+            A-->>U: Explicit error + warning / diagnostics
+        end
     end
 
     U->>S: DETAILER_PLAN + selected task_id
     S->>S: Validate task_id
     S-->>U: detailer_prompt, scope, subject_id
 ```
+
+通信障害、HTTPエラー、モデル不存在、timeout、空レスポンスは、Structured JSON検証へ到達しないOllama呼び出し失敗として扱います。`retry_once`はretry可能な失敗またはSchema違反に対して1回だけ再試行し、再失敗時はfallbackせず明示的errorを返します。`safe_fallback`のみ固定fallback出力へ進みます。
 
 ---
 
