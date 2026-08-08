@@ -147,7 +147,7 @@
 
 ## 6. Validation: contract・integration・snapshot テスト
 
-- [ ] 6.1 (P) contract テストを実装する
+- [x] 6.1 (P) contract テストを実装する
   - DETAILER_PLAN Schema の適合/拒否と `schema_version` 互換、Ollama response Schema の必須検証を確認する
   - 全 preset・`default_v1` profile・`forbidden_terms_v1` の必須キー充足と、欠落・mapping 不一致での設定エラーを確認する
   - 代表 Plan JSON を Schema（infra）と domain 不変条件検証の双方に通し、判定が矛盾しないことを確認する
@@ -156,7 +156,7 @@
   - _Depends: 2.1, 2.2, 2.3, 2.4, 3.3, 4.1, 4.2, 4.3_
   - _Boundary: tests/contract_
 
-- [ ] 6.2 (P) integration テストを実装する
+- [x] 6.2 (P) integration テストを実装する
   - 多様な fixture 抽出結果（写真／イラスト／顔アップ／全身／人物なし／短文／矛盾特徴）から Plan Builder → 直列化 → 復号の往復同値を確認する
   - Upscale Builder が元プロンプトにない被写体特徴を混入しないことを、ComfyUI / Ollama 非依存の fixture で確認する
   - 観測可能な完了条件: fixture 起点の Plan 往復同値と Upscale 非混入が通り、実 Ollama 無しで全経路が再現される
@@ -164,7 +164,7 @@
   - _Depends: 4.4, 5.1, 5.2_
   - _Boundary: tests/integration_
 
-- [ ] 6.3 (P) snapshot テストを実装する
+- [x] 6.3 (P) snapshot テストを実装する
   - 代表元プロンプト集合ごとに `upscale_prompt` と 7 scope の `prompt_final`・warnings を snapshot 化する
   - preset 変更が該当 scope の snapshot のみに反映されることを確認する
   - 観測可能な完了条件: upscale + 7 scope の snapshot が固定され、preset 差分で該当 snapshot のみが変化する

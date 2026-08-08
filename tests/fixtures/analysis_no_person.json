@@ -1,0 +1,8 @@
+{
+  "global": {
+    "style": ["flat illustration"],
+    "environment": ["empty room"]
+  },
+  "scoped_features": {},
+  "warnings": ["no clear human subject detected"]
+}
