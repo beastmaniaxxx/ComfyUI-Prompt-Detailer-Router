@@ -199,6 +199,8 @@ From JSONは2種類の入力を区別します。
 - `finalized_plan_json`: 本パッケージのJSON codecが完成済み`DETAILER_PLAN`から直列化したJSONだけを受け付け、Plan Schema検証後に復号する
 - `llm_extraction_json`: LLMの抽出結果Schemaとして検証し、scope正規化、`task_id`生成、preset適用、禁止語検査、`prompt_final`決定をPython側のPlan Builderで実行する
 
+入力形式は`input_kind` COMBOで明示的に選択します。初期値は`llm_extraction_json`とし、JSON形状による自動判定は行いません。`finalized_plan_json`は本パッケージが生成した信頼済みPlan JSONを再読込する用途に限定し、LLM Text Processorの出力をこのモードへ渡さないでください。
+
 LLM Text Processor由来のJSONを、最終`DETAILER_PLAN`として直接信頼しません。LLMが生成した`task_id`、`prompt_final`、維持指示、局所ディテールは採用せず、Python側の決定工程を必ず通します。
 
 ---
@@ -224,6 +226,7 @@ flowchart TD
         VALIDATE --> UPSCALE_BUILD
         VALIDATE --> PLAN_BUILD
         SCOPE --> WARN_COLLECT
+        OLLAMA --> WARN_COLLECT
         VALIDATE --> WARN_COLLECT
         UPSCALE_BUILD --> WARN_COLLECT
         PLAN_BUILD --> WARN_COLLECT
@@ -376,8 +379,7 @@ ComfyUI-Prompt-Detailer-Router/
 │  ├─ 01_basic_upscale_face.json
 │  ├─ 02_face_and_hair.json
 │  ├─ 03_multiple_detailer_scopes.json
-│  ├─ 04_multiple_subjects.json
-│  └─ 05_llm_text_processor_compat.json
+│  └─ 04_llm_text_processor_compat.json
 │
 ├─ tests/
 │  ├─ conftest.py
@@ -554,6 +556,17 @@ class DetailerPlan:
 }
 ```
 
+## 9.4 Plan整合条件
+
+- すべての`tasks[].scope`は`requested_scopes`に含まれていなければならない
+- `requested_scopes`に含まれないscopeのtaskはSchemaまたはValidatorで拒否する
+- `requested_scopes`は正規化済みscopeの重複なし配列とする
+- v1では、要求scopeごとにtaskが必ず存在することまでは要求しない
+- 要求scopeに対応するtaskが欠落した場合はPlan-level warningへ記録する
+- `safe_fallback`では、要求scopeごとに`enabled=true`のfallback taskを生成して欠落を補完する
+
+これにより、UI候補が`requested_scopes`から作られる場合でも、Selectorが利用できるtask scopeと食い違わないようにします。
+
 ---
 
 # 10. task_id設計
@@ -655,6 +668,7 @@ main.hands
 - `task_id`をSTRINGとして受け取る
 - 実行時にPlanと照合する
 - 存在しない場合は`missing_behavior`を適用する
+- 完全一致したtaskでも`enabled=false`なら選択不可とし、missingと同じ扱いで`missing_behavior`を適用する
 
 ## 11.5 missing behavior
 
@@ -685,6 +699,8 @@ fallbackで代替taskを返す場合:
 - `warning`: 要求された`task_id`が見つからず、どの規則でどの代替taskを返したかを含める
 
 `found`は「要求された`task_id`が完全一致したか」ではなく、「有効なtaskを返せたか」を示します。完全一致しなかった事実は`warning`で表現します。
+
+入力`task_id`に完全一致するtaskが存在しても、`enabled=false`の場合は有効なtaskを返せていないためmissingとして扱います。この場合、`error`は実行失敗、`empty`は`found=false`の空出力、`first_matching_scope`と`first_available`は上記規則に従って別の`enabled=true` taskを探索します。warningには、要求taskが存在したが無効だった事実を含めます。
 
 ---
 
@@ -728,6 +744,8 @@ fallbackで代替taskを返す場合:
 上記の`format`は概念例です。実装では空のSchemaを渡さず、`ollama_response_v1.schema.json`の実際の`properties`、`required`、追加フィールド方針を渡します。
 
 `subject_hint`は主被写体の曖昧さを減らす補助情報としてLLM payloadへ含めます。ただし、元プロンプトにない特徴を補完する根拠には使わず、抽出対象の優先順位付けと警告生成の補助に限定します。空文字の場合は`SUBJECT_HINT`を省略するか、空として扱います。
+
+Ollama clientは接続失敗、HTTP/modelエラー、timeout、空レスポンス、retry実行有無、レスポンス時間、fallback理由をdiagnosticsとして返します。これらはStructured Output検証より前に発生するため、workflow上も`WARN_COLLECT`へ集約します。
 
 ## 12.2 LLMの責務
 
@@ -921,7 +939,7 @@ Planの内容を人間向けテキストで表示します。
 
 既存JSONをPlanへ変換します。
 
-受け入れるJSONの種類を明示し、完成済みPlan JSONとLLM抽出JSONを混同しません。LLM抽出JSONを扱う場合は、Analyzerと同じPython側のValidator / Plan Builder / preset適用工程を通して`DETAILER_PLAN`を生成します。
+`input_kind` COMBOで`finalized_plan_json`または`llm_extraction_json`を明示的に選択します。JSONの形状による自動判定は行わず、完成済みPlan JSONとLLM抽出JSONを混同しません。LLM抽出JSONを扱う場合は、Analyzerと同じPython側のValidator / Plan Builder / preset適用工程を通して`DETAILER_PLAN`を生成します。
 
 ## Phase 2以降
 
@@ -1021,6 +1039,16 @@ sequenceDiagram
 ```
 
 通信障害、HTTPエラー、モデル不存在、timeout、空レスポンスは、Structured JSON検証へ到達しないOllama呼び出し失敗として扱います。`retry_once`はretry可能な失敗またはSchema違反に対して1回だけ再試行し、再失敗時はfallbackせず明示的errorを返します。`safe_fallback`のみ固定fallback出力へ進みます。
+
+`safe_fallback`時のAnalyzer出力:
+
+- `upscale_prompt`: 元プロンプトをベースに、抽出を必要としない固定の維持指示とUpscale presetをPython側で結合した文字列
+- `detailer_plan`: 正規化済み`requested_scopes`ごとに`main.<scope>`の`enabled=true` fallback taskを生成した`DETAILER_PLAN`
+- `detailer_json`: 完成済みfallback `DETAILER_PLAN`をJSON codecで直列化した文字列
+- `warning`: Ollama失敗またはSchema違反によりfallbackした理由、破棄した未対応scope、生成したfallback task数を含める
+- `diagnostics`: failure_mode、retry有無、Ollama error category、elapsed time、fallback reasonを含める
+
+fallback taskの`extracted_features`は空配列、`prompt_core`はscope別の最小固定文、`prompt_final`はPython presetから構築した非空文字列にします。元プロンプトにない具体属性は追加せず、`requested_scopes`に含まれるscopeだけを生成します。
 
 ---
 
