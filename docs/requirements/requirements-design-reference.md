@@ -350,19 +350,23 @@ ComfyUI-Prompt-Detailer-Router/
 │  │  ├─ schemas/
 │  │  │  ├─ detailer_plan_v1.schema.json
 │  │  │  └─ ollama_response_v1.schema.json
+│  │  ├─ policies/
+│  │  │  └─ forbidden_terms_v1.json
 │  │  └─ presets/
 │  │     ├─ upscale/
 │  │     │  ├─ photographic.json
 │  │     │  ├─ illustration.json
 │  │     │  └─ minimal.json
-│  │     └─ detailer/
-│  │        ├─ face.json
-│  │        ├─ hair.json
-│  │        ├─ hands.json
-│  │        ├─ body.json
-│  │        ├─ upper_body.json
-│  │        ├─ clothing.json
-│  │        └─ generic.json
+│  │     ├─ detailer/
+│  │     │  ├─ face.json
+│  │     │  ├─ hair.json
+│  │     │  ├─ hands.json
+│  │     │  ├─ body.json
+│  │     │  ├─ upper_body.json
+│  │     │  ├─ clothing.json
+│  │     │  └─ generic.json
+│  │     └─ detailer_profiles/
+│  │        └─ default_v1.json
 │  │
 │  └─ utils/
 │     ├─ __init__.py
@@ -869,6 +873,63 @@ Preserve the original hand pose, finger placement, skin tone, accessories, and o
 Preserve the original garment shape, fit, color, pattern, accessories, and folds. Refine fabric weave, stitching, seams, edges, fasteners, natural wrinkles, and material response without redesigning the clothing.
 ```
 
+## 13.6 Upper Body Detailer
+
+利用情報:
+
+- face
+- hair
+- skin
+- upper body
+- clothing
+- accessories
+
+`upper_body`では、胸から上または上半身領域に見える人物情報だけを扱います。背景、脚部、全身ポーズ、画面外の身体情報を混入させません。faceやhairの詳細は上半身領域の一貫性維持に必要な範囲に限定し、顔の再設計や髪型変更につながる表現を追加しません。
+
+追加プリセット例:
+
+```text
+Preserve the original upper body pose, facial identity, hairstyle, visible skin tone, clothing shape, accessories, and garment fit. Refine visible skin texture, hairline continuity, collar edges, fabric folds, seams, and upper body contours without changing the pose, body proportions, clothing design, or background.
+```
+
+## 13.7 Body Detailer
+
+利用情報:
+
+- body
+- skin
+- clothing
+- pose
+- visible anatomy
+- accessories
+
+`body`では、元プロンプトに明記された身体、肌、衣服、ポーズ、見えている装飾だけを扱います。顔、髪、背景、年齢、体型の再設計につながる情報をscope外から補いません。全身が明記されていない場合でも、画面外の身体部位を推測して追加しません。
+
+追加プリセット例:
+
+```text
+Preserve the original body pose, proportions, visible anatomy, skin tone, clothing coverage, accessories, and silhouette. Refine natural body contours, skin texture, clothing contact, fabric folds, and visible edges without changing age, body type, pose, garment design, or adding unseen body details.
+```
+
+## 13.8 Generic Detailer
+
+利用情報:
+
+- target object
+- shape
+- material
+- surface texture
+- color
+- edges
+
+`generic`では、人物部位に分類できない対象物や小物の形状、材質、表面情報だけを扱います。対象物が明示されていない場合はfallback taskを生成し、元プロンプトにない物体や用途を確定情報として追加しません。背景全体や別subjectの特徴を混入させません。
+
+追加プリセット例:
+
+```text
+Preserve the original object identity, shape, color, material, placement, and visible surface pattern. Refine material texture, clean edges, small surface details, highlights, and contact contours without changing the object type, scale, design, or surrounding scene.
+```
+
 ---
 
 # 14. プリセット設計
@@ -881,6 +942,39 @@ Analyzerの入力も両者を分けます。
 - `detailer_preset_profile`: scope別Detailer preset mappingとprofile version
 
 `detailer_preset_profile`は、各scopeに適用するDetailer presetを束ねた設定です。例: `face -> portrait_face_v1`、`hair -> hair_strands_v1`。単一の`preset`入力でUpscale presetとDetailer presetを兼用しません。
+
+## 14.0 共通ポリシー
+
+禁止語検査は個別presetの任意項目ではなく、共有のversion付きリソースで管理します。
+
+配置例:
+
+```text
+resources/policies/forbidden_terms_v1.json
+```
+
+`forbidden_terms_v1.json`の概念構造:
+
+```json
+{
+  "version": "1.0",
+  "terms": [
+    "beautiful",
+    "perfect",
+    "symmetrical"
+  ],
+  "match": "case_insensitive_literal"
+}
+```
+
+必須規則:
+
+- Upscale Prompt BuilderとDetailer Plan Builderは同じ禁止語ポリシーを必ず適用する
+- LLM出力、preset、fallback固定文、ユーザー入力を結合した後の`prompt_final`と`upscale_prompt`を検査する
+- v1では検出した禁止語をPython側で除去し、warningまたはdiagnosticsに検出語数と対象出力を記録する
+- 禁止語の検出をLLMへ委任しない
+- presetごとの`forbidden_terms`追加はv1では採用しない
+- error扱いやprofile別禁止語は将来拡張とする
 
 ## 14.1 Upscale preset
 
@@ -904,10 +998,9 @@ Analyzerの入力も両者を分けます。
 - `preservation`
 - `restrictions`
 
-検討項目:
+任意項目:
 
 - `style_tags`
-- `forbidden_terms`
 - `applicable_media`
 - `suffix`
 
@@ -933,13 +1026,76 @@ Analyzerの入力も両者を分けます。
 - `local_details`
 - `restrictions`
 
-検討項目:
+任意項目:
 
 - `prefix`
 - `suffix`
-- `forbidden_terms`
 - `default_order`
 - `applicable_styles`
+
+## 14.3 Detailer preset profile
+
+`detailer_preset_profile`は、scope別Detailer presetの対応表です。v1では初期対応scopeすべてのmappingを必須にします。
+
+例:
+
+```json
+{
+  "version": "1.0",
+  "profile_id": "default_v1",
+  "mappings": {
+    "face": "face_v1",
+    "hair": "hair_v1",
+    "hands": "hands_v1",
+    "body": "body_v1",
+    "upper_body": "upper_body_v1",
+    "clothing": "clothing_v1",
+    "generic": "generic_v1"
+  }
+}
+```
+
+必須項目:
+
+- `version`
+- `profile_id`
+- `mappings`
+- `mappings.face`
+- `mappings.hair`
+- `mappings.hands`
+- `mappings.body`
+- `mappings.upper_body`
+- `mappings.clothing`
+- `mappings.generic`
+
+規則:
+
+- `default_v1`を既定profileとする
+- Analyzerと`PDR_DetailerPlanFromJSON`は、`detailer_preset_profile`未指定時に同じ`default_v1`を使う
+- 指定profileに要求scopeのmappingが欠ける場合は設定エラーにし、別presetへ暗黙fallbackしない
+- mapping先のDetailer presetは存在し、presetの`scope`とmapping keyが一致しなければならない
+- profileの`version`またはmapping hashをAnalyzer cache keyに含める
+
+## 14.4 scope別既定order
+
+`order`はSelectorの`first_available`と将来のExecutor順序に影響するため、v1で決定論的な既定値を定義します。
+
+| scope | default_order |
+| --- | ---: |
+| `hair` | 20 |
+| `face` | 30 |
+| `hands` | 40 |
+| `upper_body` | 50 |
+| `body` | 60 |
+| `clothing` | 70 |
+| `generic` | 90 |
+
+規則:
+
+- Plan Builderはpresetに`default_order`がない場合、この表の値を使う
+- safe fallback taskもこの表の値を使う
+- 複数taskが同じ`order`の場合はPlan内の出現順で決定する
+- presetの`default_order`を許可する場合も、未指定時の挙動はこの表で固定する
 
 ---
 
@@ -1544,16 +1700,15 @@ cc-sddのrequirements作成時に決定すべき事項です。
 5. `enabled=false`のtaskで`prompt_final`空文字を許容するか
 6. 未対応scopeをerrorにするかwarningにするか
 7. `requested_scopes`の順序を処理順として扱うか
-8. `order`の既定値
-9. retry対象をJSON不正だけに限定するか
-10. fallback時に元プロンプトをどの程度利用するか
-11. diagnosticsの公開項目
-12. キャッシュ無効化方法
-13. Ollama URLの許容範囲
-14. 動的コンボが取得できない場合のUI
-15. presetのユーザー上書き方法
-16. Registry公開時の依存関係
-17. ライセンス
+8. retry対象をJSON不正だけに限定するか
+9. fallback時に元プロンプトをどの程度利用するか
+10. diagnosticsの公開項目
+11. キャッシュ無効化方法
+12. Ollama URLの許容範囲
+13. 動的コンボが取得できない場合のUI
+14. presetのユーザー上書き方法
+15. Registry公開時の依存関係
+16. ライセンス
 
 ---
 
