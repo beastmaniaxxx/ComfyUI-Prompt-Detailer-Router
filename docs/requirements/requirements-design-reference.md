@@ -201,7 +201,7 @@ From JSONは2種類の入力を区別します。
 
 入力形式は`input_kind` COMBOで明示的に選択します。初期値は`llm_extraction_json`とし、JSON形状による自動判定は行いません。`finalized_plan_json`は本パッケージが生成した信頼済みPlan JSONを再読込する用途に限定し、LLM Text Processorの出力をこのモードへ渡さないでください。
 
-`llm_extraction_json`では、From JSONノードが`preset`入力を持ち、指定されたversion付きpresetをPlan Builderへ渡します。初期値はAnalyzerと同じ既定presetにします。preset名やpreset versionをLLM出力から推定せず、使用したpresetはdiagnosticsまたはPlan warningで確認できるようにします。
+`llm_extraction_json`では、From JSONノードが`scopes`入力と`detailer_preset_profile`入力を持ち、`scopes`をPython側で正規化して`requested_scopes`へ保存します。抽出JSON内のscope一覧を信頼して`requested_scopes`を復元しません。指定されたversion付きDetailer preset profileをPlan Builderへ渡し、未指定時はAnalyzerと同じ既定profileを使います。preset名やpreset versionをLLM出力から推定せず、使用したpresetはdiagnosticsまたはPlan warningで確認できるようにします。
 
 LLM Text Processor由来のJSONを、最終`DETAILER_PLAN`として直接信頼しません。LLMが生成した`task_id`、`prompt_final`、維持指示、局所ディテールは採用せず、Python側の決定工程を必ず通します。
 
@@ -213,7 +213,7 @@ LLM Text Processor由来のJSONを、最終`DETAILER_PLAN`として直接信頼�
 flowchart TD
     P["元画像の生成プロンプト<br/>STRING"]
     IMG["元画像<br/>IMAGE"]
-    CFG["Ollama設定<br/>scopes / model / preset / seed"]
+    CFG["Analyzer設定<br/>scopes / model / seed<br/>upscale_preset / detailer_preset_profile"]
 
     subgraph ANALYZER["PDR Ollama Prompt Analyzer"]
         SCOPE["scope正規化"]
@@ -237,8 +237,8 @@ flowchart TD
     P --> SCOPE
     CFG --> SCOPE
     CFG --> OLLAMA
-    CFG --> UPSCALE_BUILD
-    CFG --> PLAN_BUILD
+    CFG -- upscale_preset --> UPSCALE_BUILD
+    CFG -- detailer_preset_profile --> PLAN_BUILD
 
     UPSCALE_BUILD --> UP["upscale_prompt<br/>STRING"]
     PLAN_BUILD --> PLAN["detailer_plan<br/>DETAILER_PLAN"]
@@ -864,6 +864,13 @@ Preserve the original garment shape, fit, color, pattern, accessories, and folds
 
 Upscale presetとDetailer presetは別Schemaとして扱います。
 
+Analyzerの入力も両者を分けます。
+
+- `upscale_preset`: Upscale Prompt Builderへ渡すUpscale preset名とversion
+- `detailer_preset_profile`: scope別Detailer preset mappingとprofile version
+
+`detailer_preset_profile`は、各scopeに適用するDetailer presetを束ねた設定です。例: `face -> portrait_face_v1`、`hair -> hair_strands_v1`。単一の`preset`入力でUpscale presetとDetailer presetを兼用しません。
+
 ## 14.1 Upscale preset
 
 例:
@@ -947,7 +954,7 @@ Planの内容を人間向けテキストで表示します。
 
 `input_kind` COMBOで`finalized_plan_json`または`llm_extraction_json`を明示的に選択します。JSONの形状による自動判定は行わず、完成済みPlan JSONとLLM抽出JSONを混同しません。LLM抽出JSONを扱う場合は、Analyzerと同じPython側のValidator / Plan Builder / preset適用工程を通して`DETAILER_PLAN`を生成します。
 
-`llm_extraction_json`では`preset`入力を必須とし、未指定時はAnalyzerと同じ既定presetを使います。LLM出力内のpreset指定は信頼せず、Python側の入力値だけをPlan Builderへ渡します。
+`llm_extraction_json`では`scopes`入力と`detailer_preset_profile`入力を必須とし、未指定時はAnalyzerと同じ既定値を使います。`scopes`はPython側で正規化して`requested_scopes`に保存し、欠落scope warningの基準にします。LLM出力内のscope一覧やpreset指定は信頼せず、Python側の入力値だけをPlan Builderへ渡します。
 
 ## Phase 2以降
 
@@ -1074,8 +1081,10 @@ fallback taskの`extracted_features`は空配列、`prompt_core`はscope別の�
 - failure_mode
 - system prompt version
 - Schema version
-- preset name
-- preset version
+- upscale_preset name
+- upscale_preset version
+- detailer_preset_profile name
+- detailer_preset_profile versionまたはmapping hash
 - prompt builder version
 
 キャッシュに影響させない候補:
@@ -1396,7 +1405,8 @@ Analyzer scopes
 
 対策:
 
-- preset version
+- upscale_preset version
+- detailer_preset_profile versionまたはmapping hash
 - snapshot test
 - CHANGELOG
 - cache keyへversionを含める
