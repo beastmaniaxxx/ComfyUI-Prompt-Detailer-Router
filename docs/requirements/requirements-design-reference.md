@@ -1253,7 +1253,17 @@ fallback taskの`extracted_features`は空配列、`prompt_core`はscope別の�
 - upscale_preset version
 - detailer_preset_profile name
 - detailer_preset_profile versionまたはmapping hash
+- forbidden_terms_policy id
+- forbidden_terms_policy versionまたはcontent hash
 - prompt builder version
+
+キャッシュ保存方針:
+
+- v1では、Ollama解析、Structured JSON検証、Python BuilderによるUpscale Promptと`DETAILER_PLAN`生成まで成功した通常結果だけを成功キャッシュ対象にする
+- `failure_mode=safe_fallback`で生成したfallback出力は、通常成功キャッシュへ保存しない
+- `strict`または`retry_once`で最終的に失敗したエラー結果も、通常成功キャッシュへ保存しない
+- 将来fallback専用キャッシュを導入する場合は、通常成功キャッシュと別namespaceにし、短いTTLまたは次回実行時の再評価を必須にする
+- キャッシュ命中時も、使用中の禁止語ポリシーversionまたはcontent hashが一致しない結果は再利用しない
 
 キャッシュに影響させない候補:
 
@@ -1575,6 +1585,7 @@ Analyzer scopes
 
 - upscale_preset version
 - detailer_preset_profile versionまたはmapping hash
+- forbidden_terms_policy versionまたはcontent hash
 - snapshot test
 - CHANGELOG
 - cache keyへversionを含める
