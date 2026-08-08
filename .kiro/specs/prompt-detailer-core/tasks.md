@@ -88,14 +88,14 @@
 
 ## 4. Infrastructure 層（リソース I/O と形状検証）
 
-- [ ] 4.1 (P) Schema loader と Draft202012Validator 生成を実装する
+- [x] 4.1 (P) Schema loader と Draft202012Validator 生成を実装する
   - `detailer_plan_v1` と `ollama_response_v1` の Schema ファイルを読み込み、`Draft202012Validator` を生成してプロセス内でキャッシュする
   - 観測可能な完了条件: loader が両 Schema の validator を返し、同一 Schema の再取得でキャッシュが再利用される unit test が通る
   - _Requirements: 11.1, 13.2_
   - _Depends: 2.1, 2.2_
   - _Boundary: infrastructure/schema_loader.py_
 
-- [ ] 4.2 (P) preset/profile loader を実装する
+- [x] 4.2 (P) preset/profile loader を実装する
   - upscale preset・detailer preset・detailer profile を読み込み、必須キーを検証する。未指定時は既定（`default_v1`）を使う
   - 必須キー欠落・profile の mapping 欠落・mapping 先 preset の `scope` 不一致を設定エラーとして報告し、別 preset へ暗黙 fallback しない
   - 観測可能な完了条件: 正常 preset/profile が不変オブジェクトで読め、欠落・不一致で設定エラーが送出される unit test が通る
@@ -103,14 +103,14 @@
   - _Depends: 2.3, 3.6_
   - _Boundary: infrastructure/preset_loader.py_
 
-- [ ] 4.3 (P) 禁止語 policy loader を実装する
+- [x] 4.3 (P) 禁止語 policy loader を実装する
   - `forbidden_terms_v1` を既定として読み込み、term 一覧と match 方式を提供する
   - 観測可能な完了条件: policy が読み込め、term 一覧と match 方式が取得できる unit test が通る
   - _Requirements: 9.1_
   - _Depends: 2.4_
   - _Boundary: infrastructure/policy_loader.py_
 
-- [ ] 4.4 JSON codec（直列化・復号・2 段検証）を実装する
+- [x] 4.4 JSON codec（直列化・復号・2 段検証）を実装する
   - `DetailerPlan` を全フィールド保持で直列化し、キー順序を安定させ往復同値を保証する
   - 復号は parse → Tier1 形状検証（Schema ファイルに対する検証、未知フィールド拒否）→ domain 構築 → Tier2 不変条件検証の順で行う
   - 不正 JSON・形状不一致・未知フィールドは黙って補正・破棄せず明示的エラーにし、`eval`/`exec` を使わない
@@ -180,3 +180,5 @@
 - **禁止語マッチ**: `apply_forbidden_terms` は `case_insensitive_literal` を**単語境界（`\b`）付き**で解釈し、`imperfect` から `perfect` を削らない。builder（5.1/5.2）と snapshot（6.3）はこの語単位除去を前提にする。除去後は空白正規化される。
 - **domain 純粋性**: `tests/unit/test_domain_purity.py` が domain 配下の `jsonschema`/`requests`/`comfy` 等 import を静的に禁止。infra loader（4.x）でのみ `jsonschema` を使う。
 - **validate_plan は非 raise**: domain の `validate_plan` は `PlanValidationIssue` を列挙して返すのみ。user 向け `PlanValidationError` への昇格は application（5.3）が担う。
+- **infra loader の入口**（5.1/5.2 で利用）: `preset_loader.load_detailer_profile()`（既定 `default_v1`、mapping 先の存在と scope 一致を検証）／`load_detailer_preset(scope)`／`load_upscale_preset(id)`／`policy_loader.load_forbidden_terms_policy()`／`json_codec.encode_plan`。preset に `default_order` が無ければ `order_defaults` を使う。
+- **json_codec の直列化**: `ensure_ascii=False, indent=2`、キー順は schema 準拠で固定（往復同値・snapshot 安定）。decode は Tier1(schema)→Tier2(`validate_plan`)。

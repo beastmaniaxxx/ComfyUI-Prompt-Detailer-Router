@@ -1,0 +1,28 @@
+"""Unit tests for forbidden-terms policy loading (infrastructure/policy_loader).
+
+Covers Requirement 9.1: load the versioned shared policy with required keys.
+"""
+
+import pytest
+
+from prompt_detailer_router.domain.errors import ConfigurationError
+from prompt_detailer_router.infrastructure import policy_loader
+
+
+def test_load_default_policy() -> None:
+    policy = policy_loader.load_forbidden_terms_policy()
+    assert policy.match == "case_insensitive_literal"
+    assert isinstance(policy.terms, tuple)
+    lowered = {t.lower() for t in policy.terms}
+    assert {"beautiful", "perfect", "symmetrical"} <= lowered
+    assert policy.version
+
+
+def test_missing_policy_raises_configuration_error() -> None:
+    with pytest.raises(ConfigurationError):
+        policy_loader.load_forbidden_terms_policy("does_not_exist")
+
+
+def test_policy_missing_key_raises() -> None:
+    with pytest.raises(ConfigurationError):
+        policy_loader.parse_policy({"version": "1.0", "terms": ["x"]})  # no match
