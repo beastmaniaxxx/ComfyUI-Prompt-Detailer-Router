@@ -4,7 +4,7 @@
 
 ## 1. Foundation: パッケージ雛形とテスト実行環境
 
-- [ ] 1. `prompt_detailer_router` パッケージ骨格と pytest 実行基盤を用意する
+- [x] 1. `prompt_detailer_router` パッケージ骨格と pytest 実行基盤を用意する
   - `prompt_detailer_router/` と `domain/`・`application/`・`infrastructure/`・`resources/`・`utils/` の各 `__init__.py` を作成し、空パッケージが import できる状態にする
   - `tests/` に `conftest.py` と `unit/`・`contract/`・`fixtures/`・`snapshots/` の骨格を置き、`pytest` がエラーなく 0 件収集できる状態にする
   - runtime 依存 `jsonschema>=4.20,<5` と開発依存 `pytest` を導入し、`infrastructure` からのみ `jsonschema` を import する方針を確認する（domain では未導入を保証）

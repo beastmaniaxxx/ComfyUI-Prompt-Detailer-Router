@@ -5,3 +5,11 @@
 .codex/agents/
 .github/skills/
 .migration-backups/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
