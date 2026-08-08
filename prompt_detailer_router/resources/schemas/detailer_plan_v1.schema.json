@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/prompt-detailer-router/schemas/detailer_plan_v1.schema.json",
+  "title": "DETAILER_PLAN v1",
+  "description": "Canonical contract for the DETAILER_PLAN custom type (schema_version 1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "requested_scopes", "tasks", "warnings"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "requested_scopes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/scope"
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "warnings": {
+      "$ref": "#/$defs/stringArray"
+    }
+  },
+  "$defs": {
+    "scope": {
+      "type": "string",
+      "enum": [
+        "face",
+        "hair",
+        "hands",
+        "body",
+        "upper_body",
+        "clothing",
+        "generic"
+      ]
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "subject_id",
+        "scope",
+        "extracted_features",
+        "prompt_core",
+        "prompt_final",
+        "order",
+        "enabled",
+        "warnings"
+      ],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "extracted_features": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "prompt_core": {
+          "type": "string"
+        },
+        "prompt_final": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "warnings": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    }
+  }
+}

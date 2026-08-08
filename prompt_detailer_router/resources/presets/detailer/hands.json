@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "scope": "hands",
+  "preservation": "Preserve the original hand pose, finger placement, skin tone, accessories, and object interaction.",
+  "local_details": "Refine natural finger anatomy, joints, knuckles, nails, skin creases, and clean finger separation.",
+  "restrictions": "Do not change the gesture, finger count, or add unstated accessories."
+}

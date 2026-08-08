@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/prompt-detailer-router/schemas/ollama_response_v1.schema.json",
+  "title": "Ollama extraction response v1",
+  "description": "Foundation schema for validated prompt-extraction results. LLM transport, prompts, and retry are owned by the ollama-prompt-analyzer spec.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["global", "scoped_features"],
+  "properties": {
+    "global": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "medium": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "style": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "lighting": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "camera": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "material": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "texture": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "environment": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "subject": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "scoped_features": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/scope"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/stringArray"
+      }
+    },
+    "warnings": {
+      "$ref": "#/$defs/stringArray"
+    }
+  },
+  "$defs": {
+    "scope": {
+      "type": "string",
+      "enum": [
+        "face",
+        "hair",
+        "hands",
+        "body",
+        "upper_body",
+        "clothing",
+        "generic"
+      ]
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

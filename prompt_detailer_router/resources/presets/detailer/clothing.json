@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "scope": "clothing",
+  "preservation": "Preserve the original garment shape, fit, color, pattern, accessories, and folds.",
+  "local_details": "Refine fabric weave, stitching, seams, edges, fasteners, natural wrinkles, and material response.",
+  "restrictions": "Do not redesign the clothing or change its color or pattern."
+}

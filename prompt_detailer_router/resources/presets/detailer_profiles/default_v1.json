@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "profile_id": "default_v1",
+  "mappings": {
+    "face": "face",
+    "hair": "hair",
+    "hands": "hands",
+    "body": "body",
+    "upper_body": "upper_body",
+    "clothing": "clothing",
+    "generic": "generic"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "match": "case_insensitive_literal",
+  "terms": [
+    "beautiful",
+    "perfect",
+    "symmetrical"
+  ]
+}

@@ -13,21 +13,21 @@
 
 ## 2. リソース定義: JSON Schema・preset・profile・policy
 
-- [ ] 2.1 (P) DETAILER_PLAN の JSON Schema を定義する
+- [x] 2.1 (P) DETAILER_PLAN の JSON Schema を定義する
   - Draft 2020-12 で root と task 双方を `additionalProperties: false` とし、未知フィールドを拒否する
   - root 必須（`schema_version`・`requested_scopes`・`tasks`・`warnings`）、`schema_version` は `const: 1`、`requested_scopes` は 7 scope enum の `uniqueItems`、task は全 9 フィールド必須で `scope` は 7 scope enum とする
   - 観測可能な完了条件: 正例 Plan JSON が適合し、未知フィールド・必須欠落・`schema_version≠1` を含む反例が Draft202012Validator で拒否される
   - _Requirements: 11.1, 11.2, 14.2_
   - _Boundary: resources/schemas/detailer_plan_v1.schema.json_
 
-- [ ] 2.2 (P) Ollama response の JSON Schema（土台）を定義する
+- [x] 2.2 (P) Ollama response の JSON Schema（土台）を定義する
   - `global` と `scoped_features` を必須、`warnings` を任意とし、`global` はカテゴリ別 `array<string>`、`scoped_features` は scope キーの `array<string>` とする
   - 実通信・LLM system prompt・retry は本 spec 対象外であることを前提に、抽出結果の形状だけを定義する
   - 観測可能な完了条件: 代表的な抽出結果 JSON が適合し、必須欠落の反例が拒否される
   - _Requirements: 13.1, 14.2_
   - _Boundary: resources/schemas/ollama_response_v1.schema.json_
 
-- [ ] 2.3 (P) Upscale/Detailer preset と Detailer profile を定義する
+- [x] 2.3 (P) Upscale/Detailer preset と Detailer profile を定義する
   - 7 scope 分の detailer preset（`version`・`scope`・`preservation`・`local_details`・`restrictions`）と 3 種の upscale preset（`version`・`preset_id`・`quality_details`・`preservation`・`restrictions`）を作成する
   - `default_v1` profile に 7 scope すべての mapping を定義し、各 mapping 先 preset の `scope` が key と一致するようにする
   - preset 文言は reference §13 の scope 別方針（顔再設計・美化・scope 外混入を避ける）に沿って記述する
@@ -35,7 +35,7 @@
   - _Requirements: 10.1, 10.2, 10.3, 8.4, 14.2_
   - _Boundary: resources/presets_
 
-- [ ] 2.4 (P) 禁止語ポリシーリソースを定義する
+- [x] 2.4 (P) 禁止語ポリシーリソースを定義する
   - `version`・`terms`（`beautiful`・`perfect`・`symmetrical` を含む）・`match: case_insensitive_literal` を持つ共有 policy を作成する
   - 観測可能な完了条件: `forbidden_terms_v1.json` が読み込み可能で、必須キーが揃っている
   - _Requirements: 9.1, 14.2_
@@ -171,3 +171,9 @@
   - _Requirements: 8.4, 14.6_
   - _Depends: 5.1, 5.2_
   - _Boundary: tests/snapshots_
+
+## Implementation Notes
+
+- **リソースアクセス**: `resources` は package（`__init__.py` あり）だが `schemas/`・`presets/`・`policies/` サブディレクトリは package ではない。`importlib.resources.files("prompt_detailer_router.resources").joinpath("schemas", "detailer_plan_v1.schema.json")` の形で親 package から辿ること（loader タスク 4.1/4.2/4.3 で踏襲）。
+- **profile mapping 値 = detailer preset ファイル名 stem**（scope 名と一致、例 `"face": "face"`）。design の File Structure（`detailer/face.json`）に合わせた確定仕様で、reference §14.3 の例示 `"face_v1"` とは異なる。preset_loader（4.2）は mapping 値を `detailer/<value>.json` として解決し、その `scope` が key と一致することを検証する。
+- **開発依存**: `jsonschema>=4.20,<5`（インストール済み 4.26.0）は infra 限定。テストは `python -m pytest -q` で実行。

@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "preset_id": "minimal",
+  "quality_details": "Refine overall sharpness, clean contours, and coherent fine detail.",
+  "preservation": "Keep the original composition, subject, and lighting unchanged.",
+  "restrictions": "Do not introduce unstated attributes."
+}
