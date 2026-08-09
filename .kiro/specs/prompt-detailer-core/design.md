@@ -33,7 +33,7 @@
 
 ### Out of Boundary
 - Ollama client / 実通信 / retry / failure_mode / 接続 diagnostics。
-- LLM system prompt テキストリソース（`prompts/extract_prompt_v1.txt` 等）。
+- LLM system prompt テキストリソース（`prompts/extract_prompt_v1.txt`・`repair_prompt_v1.txt` 等の LLM 向け prompt）。※ core 側の決定論 builder が使う version 付きテンプレート（`resources/prompts/detailer_builder_v1.json`）は別カテゴリで core 所有。
 - すべての ComfyUI node class と `compat.py` / `extension.py` の登録処理。
 - フロントエンド JS（scope parser、graph resolver、combo 更新）。
 - Selector の `missing_behavior`、`PDR_DetailerPlanFromJSON` ノード I/O（core は Plan Builder 契約のみ提供）。
@@ -576,7 +576,7 @@ erDiagram
 - 将来拡張は `schema_version` 更新 or 明示 `metadata` 追加として扱う（黙った未知フィールドは拒否）。
 
 **Ollama response Schema（`ollama_response_v1.schema.json`, Draft 2020-12）— 土台のみ**
-- required: `global`, `scoped_features`。`warnings` は任意。
+- required: `schema_version`（`const: 1`）, `global`, `scoped_features`。`warnings` は任意（Req 13.2 に合わせ version 互換を明示、contract test で異なる version を拒否）。下流 analyzer は Structured Output に `schema_version` を含めるか、検証前に注入する。
 - `global`: object（style/lighting/camera/material/texture/environment/subject などのカテゴリ、各 `array<string>`）。
 - `scoped_features`: object（key=scope、value=`array<string>`）。
 - core は Schema と `PromptAnalysis` への対応のみ所有。実際の LLM 呼び出し・prompt・retry は analyzer spec（Req 13.3）。

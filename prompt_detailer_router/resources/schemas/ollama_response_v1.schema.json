@@ -5,8 +5,11 @@
   "description": "Foundation schema for validated prompt-extraction results. LLM transport, prompts, and retry are owned by the ollama-prompt-analyzer spec.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["global", "scoped_features"],
+  "required": ["schema_version", "global", "scoped_features"],
   "properties": {
+    "schema_version": {
+      "const": 1
+    },
     "global": {
       "type": "object",
       "additionalProperties": false,

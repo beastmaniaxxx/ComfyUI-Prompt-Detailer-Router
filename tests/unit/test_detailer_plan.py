@@ -117,19 +117,12 @@ def test_enabled_task_with_empty_prompt_final_is_rejected() -> None:
 def test_disabled_task_with_empty_prompt_final_is_allowed() -> None:
     # A disabled task may have an empty prompt_final, but the requested scope
     # still needs at least one enabled task, so add an enabled sibling.
-    disabled = _task("face", prompt_final="", enabled=False)
-    enabled = DetailerTask(
-        task_id="main.face.alt",
-        subject_id="main",
-        scope="face",
-        extracted_features=(),
-        prompt_core="",
-        prompt_final="Completed prompt.",
-        order=31,
-        enabled=True,
-        warnings=(),
-    )
-    issues = validate_plan(_plan([disabled, enabled], requested=("face",)))
+    # A disabled task may have an empty prompt_final. Since (subject_id, scope)
+    # must be unique, the disabled task uses a distinct subject_id while the
+    # requested scope still has an enabled task.
+    enabled = _task("face")  # main.face, enabled, non-empty
+    disabled = _task("face", subject_id="other", prompt_final="", enabled=False)
+    issues = validate_plan(_plan([enabled, disabled], requested=("face",)))
     assert not any(i.code == "empty_prompt_final" for i in issues)
 
 
@@ -144,3 +137,52 @@ def test_issue_is_structured() -> None:
     issues = validate_plan(plan)
     assert issues and all(isinstance(i, PlanValidationIssue) for i in issues)
     assert all(i.message for i in issues)
+
+
+# --- contract completeness: task_id format, (subject,scope) uniqueness,
+#     requested_scopes normalization (Req 3.1, 3.3, 4.4) ---
+
+def test_malformed_task_id_is_rejected() -> None:
+    bad = DetailerTask(
+        task_id="garbage",
+        subject_id="main",
+        scope="face",
+        extracted_features=(),
+        prompt_core="",
+        prompt_final="done",
+        order=30,
+        enabled=True,
+        warnings=(),
+    )
+    issues = validate_plan(_plan([bad], requested=("face",)))
+    assert any(i.code == "malformed_task_id" for i in issues)
+
+
+def test_duplicate_subject_scope_is_rejected() -> None:
+    # Two distinct task_ids but the same (subject_id, scope) pair.
+    a = _task("face")
+    b = DetailerTask(
+        task_id="main.face",
+        subject_id="main",
+        scope="face",
+        extracted_features=(),
+        prompt_core="",
+        prompt_final="another",
+        order=31,
+        enabled=True,
+        warnings=(),
+    )
+    issues = validate_plan(_plan([a, b], requested=("face",)))
+    assert any(i.code == "duplicate_subject_scope" for i in issues)
+
+
+def test_unsupported_or_non_lowercase_requested_scope_is_rejected() -> None:
+    plan = _plan([_task("face")], requested=("Face",))
+    issues = validate_plan(plan)
+    assert any(i.code == "unsupported_requested_scope" for i in issues)
+
+
+def test_duplicate_requested_scope_is_rejected() -> None:
+    plan = _plan([_task("face")], requested=("face", "face"))
+    issues = validate_plan(plan)
+    assert any(i.code == "duplicate_requested_scope" for i in issues)

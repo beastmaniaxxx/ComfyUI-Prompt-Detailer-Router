@@ -89,3 +89,8 @@ def test_profile_target_missing_preset_raises() -> None:
     )
     with pytest.raises(ConfigurationError):
         preset_loader.verify_profile_targets(bad)
+
+
+def test_malformed_preset_json_raises_configuration_error() -> None:
+    with pytest.raises(ConfigurationError):
+        preset_loader.loads_config_json("{ not valid json", "presets/detailer/face.json")

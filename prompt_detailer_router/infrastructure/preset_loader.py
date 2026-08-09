@@ -56,7 +56,16 @@ def _read_json(*parts: str) -> dict:
         raise ConfigurationError(
             f"Resource not found: {'/'.join(parts)}"
         ) from exc
-    return json.loads(text)
+    return loads_config_json(text, "/".join(parts))
+
+
+def loads_config_json(text: str, what: str) -> dict:
+    """Parse config JSON, converting syntax errors to ConfigurationError."""
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"Resource is not valid JSON: {what} ({exc})") from exc
 
 
 def _require_keys(data: dict, keys: tuple[str, ...], what: str) -> None:

@@ -13,7 +13,10 @@ import re
 from dataclasses import dataclass
 from typing import Sequence
 
-from prompt_detailer_router.domain.prompt_text import normalize_whitespace
+from prompt_detailer_router.domain.prompt_text import (
+    normalize_whitespace,
+    repair_separators,
+)
 
 CASE_INSENSITIVE_LITERAL = "case_insensitive_literal"
 
@@ -56,8 +59,9 @@ def apply_forbidden_terms(
             removed_terms.append(term)
             total += count
 
+    cleaned = normalize_whitespace(repair_separators(normalize_whitespace(working)))
     return ForbiddenScanResult(
-        text=normalize_whitespace(working),
+        text=cleaned,
         removed_count=total,
         removed_terms=tuple(removed_terms),
     )

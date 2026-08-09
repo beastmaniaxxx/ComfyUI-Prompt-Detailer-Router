@@ -14,6 +14,9 @@ from prompt_detailer_router.utils.collections import ordered_unique
 
 _WHITESPACE = re.compile(r"\s+")
 _SPACE_BEFORE_PUNCT = re.compile(r"\s+([,.;:!?])")
+_MULTI_SEPARATOR = re.compile(r"([,;])(?:\s*[,;])+")
+_LEADING_SEPARATOR = re.compile(r"^[\s,;]+")
+_TRAILING_SEPARATOR = re.compile(r"[\s,;]+$")
 
 
 def normalize_whitespace(text: str) -> str:
@@ -21,6 +24,20 @@ def normalize_whitespace(text: str) -> str:
 
     collapsed = _WHITESPACE.sub(" ", text).strip()
     return _SPACE_BEFORE_PUNCT.sub(r"\1", collapsed).strip()
+
+
+def repair_separators(text: str) -> str:
+    """Repair dangling list separators left after removing list elements.
+
+    Collapses consecutive commas/semicolons and strips leading/trailing ones
+    (e.g. after a forbidden term was removed): ``", photorealistic"`` ->
+    ``"photorealistic"``; ``"face,, hair"`` -> ``"face, hair"``.
+    """
+
+    text = _MULTI_SEPARATOR.sub(r"\1", text)
+    text = _LEADING_SEPARATOR.sub("", text)
+    text = _TRAILING_SEPARATOR.sub("", text)
+    return text
 
 
 def join_prompt(parts: Sequence[str]) -> str:

@@ -184,3 +184,10 @@
 - **json_codec の直列化**: `ensure_ascii=False, indent=2`、キー順は schema 準拠で固定（往復同値・snapshot 安定）。decode は Tier1(schema)→Tier2(`validate_plan`)。
 - **prompt_final の合成テンプレ**（6.3 snapshot が固定）: detailer = `join_prompt([feature_clause, preservation, local_details, restrictions])`（`feature_clause="Keep the described <features>."`、fallback は空）→ 禁止語除去。upscale = `join_prompt([global記述子, quality_details, preservation, restrictions])`→ 禁止語除去。global 記述子は `UPSCALE_GLOBAL_ORDER`（medium,style,lighting,camera,material,texture,environment,subject）順で dedup。
 - **prompt_core は禁止語フィルタ対象外**（Req 9.2 は prompt_final/upscale_prompt のみ）。scope 限定は `features_for_scope(scope)` + scope preset のみ使用で担保。
+- **PR#2 Codex レビュー対応（P2×7）**:
+  - Ollama response schema に `schema_version`(const 1) を必須化（Req 13.2）。analyzer は Structured Output に含めるか検証前に注入する。fixture も更新。
+  - `validate_plan` を契約完全化: `task_id==subject.scope`(3.1)・`(subject_id,scope)` 一意(3.3)・`requested_scopes` 正規化(4.4) を追加検証。`decode_plan` の garbage task_id を拒否。
+  - face preset restrictions から hairstyle/length/color 参照を除去（scope 分離、Req 8.2）。face snapshot 再生成。
+  - builder の feature_clause を version 付きリソース `resources/prompts/detailer_builder_v1.json` + `prompt_template_loader` に外部化（固定プロンプト直書き禁止）。
+  - preset/policy loader の JSON 構文エラーを `ConfigurationError` に変換（user 向けエラー化）。
+  - 禁止語除去後に区切り記号を修復（`repair_separators`）: `", X"`/`"X,, Y"` を正規化。

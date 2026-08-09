@@ -37,7 +37,11 @@ def test_plan_validator_accepts_valid_plan() -> None:
 
 
 def test_get_ollama_response_validator_accepts_valid_response() -> None:
-    valid = {"global": {"style": ["x"]}, "scoped_features": {"face": ["y"]}}
+    valid = {
+        "schema_version": 1,
+        "global": {"style": ["x"]},
+        "scoped_features": {"face": ["y"]},
+    }
     assert list(schema_loader.get_ollama_response_validator().iter_errors(valid)) == []
 
 

@@ -37,6 +37,10 @@ from prompt_detailer_router.infrastructure.preset_loader import (
     load_detailer_preset,
     load_detailer_profile,
 )
+from prompt_detailer_router.infrastructure.prompt_template_loader import (
+    DetailerBuilderTemplate,
+    load_detailer_builder_template,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,9 +61,10 @@ def _build_task(
     preset: DetailerPreset,
     features: tuple[str, ...],
     policy: ForbiddenTermsPolicy,
+    template: DetailerBuilderTemplate,
 ) -> DetailerTask:
     feature_clause = (
-        f"Keep the described {', '.join(features)}." if features else ""
+        template.render_feature_clause(", ".join(features)) if features else ""
     )
     prompt_final_raw = join_prompt(
         [feature_clause, preset.preservation, preset.local_details, preset.restrictions]
@@ -90,6 +95,7 @@ def _build_task(
 def build_detailer_plan(build_input: PlanBuildInput) -> DetailerPlan:
     profile: DetailerProfile = load_detailer_profile(build_input.profile_id)
     policy = load_forbidden_terms_policy()
+    template = load_detailer_builder_template()
 
     tasks: list[DetailerTask] = []
     plan_warnings: list[str] = []
@@ -102,7 +108,9 @@ def build_detailer_plan(build_input: PlanBuildInput) -> DetailerPlan:
                 f"No extracted features for scope '{scope}'; generated a fallback task."
             )
         tasks.append(
-            _build_task(scope, build_input.subject_id, preset, features, policy)
+            _build_task(
+                scope, build_input.subject_id, preset, features, policy, template
+            )
         )
 
     plan = DetailerPlan(

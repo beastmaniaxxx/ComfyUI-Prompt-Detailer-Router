@@ -99,3 +99,11 @@ def test_decode_enabled_empty_prompt_final_raises_validation_error() -> None:
     data["tasks"][0]["prompt_final"] = ""
     with pytest.raises(PlanValidationError):
         json_codec.decode_plan(json.dumps(data))
+
+
+def test_decode_malformed_task_id_raises_validation_error() -> None:
+    # Shape-valid string but not subject_id + "." + scope (Req 3.1).
+    data = json.loads(_valid_json())
+    data["tasks"][0]["task_id"] = "garbage"
+    with pytest.raises(PlanValidationError):
+        json_codec.decode_plan(json.dumps(data))

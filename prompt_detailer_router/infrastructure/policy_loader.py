@@ -48,4 +48,10 @@ def load_forbidden_terms_policy(policy_id: str = DEFAULT_POLICY_ID) -> Forbidden
         raise ConfigurationError(
             f"Forbidden-terms policy not found: {policy_id}"
         ) from exc
-    return parse_policy(json.loads(text))
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(
+            f"Forbidden-terms policy is not valid JSON: {policy_id} ({exc})"
+        ) from exc
+    return parse_policy(data)

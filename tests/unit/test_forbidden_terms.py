@@ -52,3 +52,25 @@ def test_is_deterministic() -> None:
     a = apply_forbidden_terms("Beautiful face", TERMS, MATCH)
     b = apply_forbidden_terms("Beautiful face", TERMS, MATCH)
     assert a == b
+
+
+def test_leading_separator_repaired_after_removal() -> None:
+    result = apply_forbidden_terms("beautiful, photorealistic", TERMS, MATCH)
+    assert result.text == "photorealistic"
+
+
+def test_middle_separator_repaired_after_removal() -> None:
+    result = apply_forbidden_terms("face, beautiful, hair", TERMS, MATCH)
+    assert result.text == "face, hair"
+
+
+def test_trailing_separator_repaired_after_removal() -> None:
+    result = apply_forbidden_terms("photorealistic, beautiful", TERMS, MATCH)
+    assert result.text == "photorealistic"
+
+
+def test_no_dangling_punctuation_remains() -> None:
+    result = apply_forbidden_terms("a beautiful, perfect, natural face", TERMS, MATCH)
+    assert ",," not in result.text
+    assert not result.text.startswith(",")
+    assert not result.text.strip().endswith(",")

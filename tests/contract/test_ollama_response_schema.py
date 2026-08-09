@@ -22,6 +22,7 @@ def _load_schema() -> dict:
 
 def _valid_response() -> dict:
     return {
+        "schema_version": 1,
         "global": {
             "style": ["photorealistic"],
             "lighting": ["soft window light"],
@@ -42,6 +43,20 @@ def test_schema_is_valid_draft_2020_12() -> None:
 def test_valid_response_passes() -> None:
     validator = Draft202012Validator(_load_schema())
     assert list(validator.iter_errors(_valid_response())) == []
+
+
+def test_schema_version_required() -> None:
+    validator = Draft202012Validator(_load_schema())
+    response = _valid_response()
+    del response["schema_version"]
+    assert list(validator.iter_errors(response)), "schema_version is required (13.2)"
+
+
+def test_schema_version_incompatible_rejected() -> None:
+    validator = Draft202012Validator(_load_schema())
+    response = _valid_response()
+    response["schema_version"] = 2
+    assert list(validator.iter_errors(response)), "schema_version 2 must be rejected (13.2)"
 
 
 def test_warnings_optional() -> None:

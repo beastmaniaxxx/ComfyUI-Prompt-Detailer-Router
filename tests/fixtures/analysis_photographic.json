@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "global": {
     "style": ["photorealistic"],
     "lighting": ["soft window light"],

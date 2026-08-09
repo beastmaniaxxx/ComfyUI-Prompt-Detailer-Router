@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "global": {
     "style": ["flat illustration"],
     "environment": ["empty room"]
