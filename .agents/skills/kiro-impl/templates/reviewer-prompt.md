@@ -27,6 +27,25 @@ The round limit is 10 per task. Spend the early rounds well rather than drip-fee
 - Every finding must cite a basis: a requirements.md or design.md section number, or an AGENTS.md section number.
 - Do NOT reject on personal preference or on anything with no basis in the approved spec or AGENTS.md.
 
+## Finding Threshold (AGENTS.md §17.5)
+
+Read AGENTS.md §17.5 before writing findings. It is binding for this review.
+
+- Only the categories listed under "指摘する" may carry `Critical` / `Important` or drive a `REJECTED` verdict.
+- Everything under "指摘しない" — equivalent refactors, naming, comment wording, type-hint spelling, test-naming style, formatter-fixable layout, unreachable inputs already excluded upstream, pre-existing issues this diff does not worsen — is `Suggestion` / `FYI` at most, capped at 5 per round, and never a rejection reason.
+- Every finding must state the concrete input, the resulting wrong output or exception, and why it is wrong. A finding you cannot give a reproduction condition for is not reportable.
+
+## Recurring Defect Classes (AGENTS.md §22)
+
+These classes produced the majority of findings on past PRs. Check them explicitly against the diff before concluding:
+
+1. Config/resource loading boundaries — value-type validation, whitespace-only strings, unknown fields, duplicate JSON keys, non-object roots, decode/encoding errors, resource-id path safety.
+2. String post-processing — removal-site repair, word boundaries with `_`, over-repair of unrelated punctuation, iteration-capped fixpoints, catastrophic backtracking, worst-case input cost.
+3. Domain invariants and round-trip symmetry — self-contained `validate_*`, real immutability, `encode`/`decode` symmetry and validation order, field paths in error messages.
+4. Preset scope/subject bleed — out-of-scope body parts, subject-dependent text in subject-agnostic presets.
+5. Externalized resources and versions — no hardcoded prompt text, version constants importable, `schema_version` required and enforced.
+6. Test coverage and runtime — every fixture kind the task's completion criteria names, Python 3.10 compatibility.
+
 ## First Action
 
 Run `git diff` to see the actual code changes. This is your primary input. If the diff is large, also read the full changed files for context.

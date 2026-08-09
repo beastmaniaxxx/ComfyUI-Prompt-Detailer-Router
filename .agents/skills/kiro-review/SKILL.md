@@ -72,6 +72,8 @@ A task gets at most 10 review rounds (AGENTS.md §17.1). Review is bounded, so f
 - From round 5 onward, restrict findings to defects newly introduced by remediation and to previously reported findings that are still unfixed.
 - Cite a basis for every finding: a `requirements.md` or `design.md` section number, or an AGENTS.md section number. Findings with no such basis are `Suggestion` or `FYI` at most and must not drive a `REJECTED` verdict.
 - Preference-based and stylistic remarks never justify rejection.
+- Apply the finding threshold in AGENTS.md §17.5: only the "指摘する" categories may be `Critical` / `Important`; everything in "指摘しない" is `Suggestion` / `FYI`, capped at 5 per round. Every finding states a concrete input, the resulting wrong output or exception, and why it is wrong — no reproduction condition, no finding.
+- Check the recurring defect classes in AGENTS.md §22 against the diff before concluding: config/resource loading boundaries, string post-processing and complexity, domain invariants and round-trip symmetry, preset scope/subject bleed, externalized resources and version constants, fixture coverage and Python 3.10 compatibility.
 
 ## Mechanical Checks
 
