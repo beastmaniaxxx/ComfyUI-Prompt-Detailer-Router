@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from importlib.resources import files
+from types import MappingProxyType
 from typing import Mapping
 
 from prompt_detailer_router.domain.errors import ConfigurationError
@@ -76,8 +77,18 @@ def _require_keys(data: dict, keys: tuple[str, ...], what: str) -> None:
         )
 
 
+def _require_str_fields(data: dict, keys: tuple[str, ...], what: str) -> None:
+    for key in keys:
+        if not isinstance(data[key], str):
+            raise ConfigurationError(
+                f"{what} field '{key}' must be a string, got "
+                f"{type(data[key]).__name__}."
+            )
+
+
 def parse_upscale_preset(data: dict) -> UpscalePreset:
     _require_keys(data, _UPSCALE_KEYS, "Upscale preset")
+    _require_str_fields(data, _UPSCALE_KEYS, "Upscale preset")
     return UpscalePreset(
         version=data["version"],
         preset_id=data["preset_id"],
@@ -89,21 +100,36 @@ def parse_upscale_preset(data: dict) -> UpscalePreset:
 
 def parse_detailer_preset(data: dict) -> DetailerPreset:
     _require_keys(data, _DETAILER_KEYS, "Detailer preset")
+    _require_str_fields(data, _DETAILER_KEYS, "Detailer preset")
+    default_order = data.get("default_order")
+    if default_order is not None and (
+        not isinstance(default_order, int) or isinstance(default_order, bool)
+    ):
+        raise ConfigurationError(
+            "Detailer preset field 'default_order' must be an integer or omitted."
+        )
     return DetailerPreset(
         version=data["version"],
         scope=data["scope"],
         preservation=data["preservation"],
         local_details=data["local_details"],
         restrictions=data["restrictions"],
-        default_order=data.get("default_order"),
+        default_order=default_order,
     )
 
 
 def parse_detailer_profile(data: dict) -> DetailerProfile:
     _require_keys(data, _PROFILE_KEYS, "Detailer profile")
+    _require_str_fields(data, ("version", "profile_id"), "Detailer profile")
     mappings = data["mappings"]
     if not isinstance(mappings, dict):
         raise ConfigurationError("Detailer profile 'mappings' must be an object.")
+    for scope, preset_id in mappings.items():
+        if not isinstance(scope, str) or not isinstance(preset_id, str):
+            raise ConfigurationError(
+                "Detailer profile 'mappings' must map string scopes to string "
+                "preset ids."
+            )
     missing = [scope for scope in SUPPORTED_SCOPES if scope not in mappings]
     if missing:
         raise ConfigurationError(
@@ -113,7 +139,7 @@ def parse_detailer_profile(data: dict) -> DetailerProfile:
     return DetailerProfile(
         version=data["version"],
         profile_id=data["profile_id"],
-        mappings=dict(mappings),
+        mappings=MappingProxyType(dict(mappings)),
     )
 
 

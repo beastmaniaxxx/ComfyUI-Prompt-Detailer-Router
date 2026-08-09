@@ -60,3 +60,16 @@ def test_empty_globals_still_produces_preset_based_prompt() -> None:
     prompt = build_upscale_prompt(analysis, "minimal").upscale_prompt
     assert prompt.strip()
     assert "Refine" in prompt
+
+
+def test_photographic_preset_is_subject_agnostic() -> None:
+    # For a non-person image the photographic preset must not force body/fabric
+    # attributes into the prompt (Req 7.2).
+    analysis = PromptAnalysis(
+        global_features={"style": ["product photo"], "environment": ["white background"]},
+        scoped_features={},
+        warnings=(),
+    )
+    prompt = build_upscale_prompt(analysis, "photographic").upscale_prompt.lower()
+    for term in ("skin", "pores", "hair strand", "fabric"):
+        assert term not in prompt

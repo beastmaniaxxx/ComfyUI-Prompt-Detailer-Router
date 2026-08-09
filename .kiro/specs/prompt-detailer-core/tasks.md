@@ -191,3 +191,9 @@
   - builder の feature_clause を version 付きリソース `resources/prompts/detailer_builder_v1.json` + `prompt_template_loader` に外部化（固定プロンプト直書き禁止）。
   - preset/policy loader の JSON 構文エラーを `ConfigurationError` に変換（user 向けエラー化）。
   - 禁止語除去後に区切り記号を修復（`repair_separators`）: `", X"`/`"X,, Y"` を正規化。
+- **PR#2 Codex レビュー 第2ラウンド対応（P2×5）**:
+  - preset/profile を読み込み時に**値型検証**（文字列/`default_order` int|None/mappings str→str）→ `ConfigurationError`。
+  - `DetailerProfile.mappings` を `MappingProxyType` で不変化（読み込み後の改変で検証迂回を防止）。
+  - `photographic` preset の `quality_details` を**被写体非依存**に変更（skin/pores/hair/fabric を除去、Req 7.2）。upscale snapshot 再生成。
+  - `decode_plan` で JSON **重複キーを拒否**（`object_pairs_hook`→`PlanDecodeError`、後勝ち黙殺を防止、Req 12.4/12.5）。
+  - schema 検証エラーメッセージに**フィールドパス**を付与（`tasks/0/order: ...`、user 向け actionable 化）。

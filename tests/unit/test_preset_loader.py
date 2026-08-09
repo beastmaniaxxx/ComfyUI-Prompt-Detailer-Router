@@ -94,3 +94,34 @@ def test_profile_target_missing_preset_raises() -> None:
 def test_malformed_preset_json_raises_configuration_error() -> None:
     with pytest.raises(ConfigurationError):
         preset_loader.loads_config_json("{ not valid json", "presets/detailer/face.json")
+
+
+def test_upscale_preset_wrong_value_type_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "preset_id": "x",
+        "quality_details": [],  # should be a string
+        "preservation": "keep",
+        "restrictions": "none",
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_upscale_preset(bad)
+
+
+def test_detailer_preset_non_int_default_order_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "scope": "face",
+        "preservation": "keep",
+        "local_details": "refine",
+        "restrictions": "none",
+        "default_order": "30",  # should be int or omitted
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_preset(bad)
+
+
+def test_profile_mappings_are_immutable() -> None:
+    profile = preset_loader.load_detailer_profile()
+    with pytest.raises(TypeError):
+        profile.mappings["face"] = "hair"  # type: ignore[index]

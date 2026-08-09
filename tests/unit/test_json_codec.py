@@ -107,3 +107,20 @@ def test_decode_malformed_task_id_raises_validation_error() -> None:
     data["tasks"][0]["task_id"] = "garbage"
     with pytest.raises(PlanValidationError):
         json_codec.decode_plan(json.dumps(data))
+
+
+def test_decode_duplicate_key_raises_plan_decode_error() -> None:
+    raw = (
+        '{"schema_version": 1, "schema_version": 1, '
+        '"requested_scopes": ["face"], "tasks": [], "warnings": []}'
+    )
+    with pytest.raises(PlanDecodeError):
+        json_codec.decode_plan(raw)
+
+
+def test_schema_error_message_includes_field_path() -> None:
+    data = json.loads(_valid_json())
+    data["tasks"][0]["order"] = "30"  # wrong type
+    with pytest.raises(PlanDecodeError) as excinfo:
+        json_codec.decode_plan(json.dumps(data))
+    assert "tasks/0/order" in str(excinfo.value)

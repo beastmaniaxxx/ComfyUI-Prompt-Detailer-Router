@@ -86,23 +86,40 @@ def _dict_to_plan(data: dict) -> DetailerPlan:
     )
 
 
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
+    """object_pairs_hook that rejects duplicate keys instead of silently keeping
+    the last value (Req 12.4/12.5: never silently drop input)."""
+
+    result: dict = {}
+    for key, value in pairs:
+        if key in result:
+            raise PlanDecodeError(f"Duplicate key in plan JSON: '{key}'.")
+        result[key] = value
+    return result
+
+
+def _format_schema_error(error) -> str:
+    location = "/".join(str(part) for part in error.path) or "(root)"
+    return f"{location}: {error.message}"
+
+
 def decode_plan(raw_json: str) -> DetailerPlan:
     """Decode a plan JSON string into a validated DetailerPlan.
 
-    Raises PlanDecodeError for malformed JSON or Tier 1 schema violations
-    (including unknown fields), and PlanValidationError for Tier 2 invariant
-    violations.
+    Raises PlanDecodeError for malformed JSON, duplicate keys, or Tier 1 schema
+    violations (including unknown fields), and PlanValidationError for Tier 2
+    invariant violations.
     """
 
     try:
-        data = json.loads(raw_json)
+        data = json.loads(raw_json, object_pairs_hook=_reject_duplicate_keys)
     except json.JSONDecodeError as exc:
         raise PlanDecodeError(f"Invalid JSON: {exc}") from exc
 
     validator = get_plan_validator()
     errors = sorted(validator.iter_errors(data), key=lambda e: str(list(e.path)))
     if errors:
-        details = "; ".join(error.message for error in errors)
+        details = "; ".join(_format_schema_error(error) for error in errors)
         raise PlanDecodeError(f"Plan JSON failed schema validation: {details}")
 
     plan = _dict_to_plan(data)
