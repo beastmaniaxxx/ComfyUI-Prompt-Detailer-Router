@@ -5,17 +5,15 @@ keys and includes the default banned beautification terms.
 """
 
 import json
-from importlib.resources import files
+from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
 REQUIRED_KEYS = {"version", "terms", "match"}
 EXPECTED_TERMS = {"beautiful", "perfect", "symmetrical"}
 
 
 def _load_policy() -> dict:
-    text = (
-        files("prompt_detailer_router.resources")
-        .joinpath("policies", "forbidden_terms_v1.json")
-        .read_text(encoding="utf-8")
+    text = resource_file("policies", "forbidden_terms_v1.json").read_text(
+        encoding="utf-8"
     )
     return json.loads(text)
 

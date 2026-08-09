@@ -7,12 +7,12 @@ both the upscale and detailer builders apply.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.resources import files
 
 from prompt_detailer_router.domain.errors import ConfigurationError
 from prompt_detailer_router.domain.forbidden_terms import CASE_INSENSITIVE_LITERAL
 from prompt_detailer_router.infrastructure.config_json import parse_config_json
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
+from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
 DEFAULT_POLICY_ID = "forbidden_terms_v1"
 _POLICY_KEYS = ("version", "terms", "match")
@@ -54,9 +54,7 @@ def parse_policy(data: dict) -> ForbiddenTermsPolicy:
 
 def load_forbidden_terms_policy(policy_id: str = DEFAULT_POLICY_ID) -> ForbiddenTermsPolicy:
     safe_resource_id(policy_id, "forbidden-terms policy")
-    resource = files("prompt_detailer_router.resources").joinpath(
-        "policies", f"{policy_id}.json"
-    )
+    resource = resource_file("policies", f"{policy_id}.json")
     try:
         text = resource.read_text(encoding="utf-8")
     except (FileNotFoundError, OSError) as exc:

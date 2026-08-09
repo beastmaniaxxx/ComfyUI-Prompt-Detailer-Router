@@ -6,9 +6,10 @@ covered by the preset_loader tests / task 6.1.
 """
 
 import json
-from importlib.resources import files
 
 import pytest
+
+from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
 SEVEN_SCOPES = ("face", "hair", "hands", "body", "upper_body", "clothing", "generic")
 UPSCALE_PRESETS = ("photographic", "illustration", "minimal")
@@ -19,11 +20,7 @@ PROFILE_REQUIRED = {"version", "profile_id", "mappings"}
 
 
 def _read(*parts: str) -> dict:
-    text = (
-        files("prompt_detailer_router.resources")
-        .joinpath(*parts)
-        .read_text(encoding="utf-8")
-    )
+    text = resource_file(*parts).read_text(encoding="utf-8")
     return json.loads(text)
 
 

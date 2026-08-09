@@ -7,7 +7,6 @@ The fixtures also validate against the Ollama response schema (13.1).
 """
 
 import json
-from importlib.resources import files
 from pathlib import Path
 
 import pytest

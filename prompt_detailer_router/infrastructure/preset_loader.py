@@ -8,7 +8,6 @@ missing keys, missing mappings, or scope mismatches raise ConfigurationError.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.resources import files
 from types import MappingProxyType
 from typing import Mapping
 
@@ -16,6 +15,7 @@ from prompt_detailer_router.domain.errors import ConfigurationError
 from prompt_detailer_router.domain.scopes import SUPPORTED_SCOPES
 from prompt_detailer_router.infrastructure.config_json import parse_config_json
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
+from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
 DEFAULT_PROFILE_ID = "default_v1"
 
@@ -51,7 +51,7 @@ class DetailerProfile:
 
 
 def _read_json(*parts: str) -> dict:
-    resource = files("prompt_detailer_router.resources").joinpath(*parts)
+    resource = resource_file(*parts)
     try:
         text = resource.read_text(encoding="utf-8")
     except (FileNotFoundError, OSError) as exc:

@@ -10,12 +10,12 @@ that prompt text lives in resources so changes are version-tracked.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.resources import files
 from string import Formatter
 
 from prompt_detailer_router.domain.errors import ConfigurationError
 from prompt_detailer_router.infrastructure.config_json import parse_config_json
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
+from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
 DEFAULT_DETAILER_BUILDER_ID = "detailer_builder_v1"
 _TEMPLATE_KEYS = ("version", "feature_clause_template")
@@ -95,9 +95,7 @@ def load_detailer_builder_template(
     template_id: str = DEFAULT_DETAILER_BUILDER_ID,
 ) -> DetailerBuilderTemplate:
     safe_resource_id(template_id, "detailer builder template")
-    resource = files("prompt_detailer_router.resources").joinpath(
-        "prompts", f"{template_id}.json"
-    )
+    resource = resource_file("prompts", f"{template_id}.json")
     try:
         text = resource.read_text(encoding="utf-8")
     except (FileNotFoundError, OSError) as exc:

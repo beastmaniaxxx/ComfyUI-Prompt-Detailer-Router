@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from importlib.resources import files
 
 from jsonschema import Draft202012Validator
+
+from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
 DETAILER_PLAN_SCHEMA = "detailer_plan_v1.schema.json"
 OLLAMA_RESPONSE_SCHEMA = "ollama_response_v1.schema.json"
@@ -20,11 +21,7 @@ OLLAMA_RESPONSE_SCHEMA = "ollama_response_v1.schema.json"
 def load_schema(schema_filename: str) -> dict:
     """Load and parse a bundled JSON Schema file by name."""
 
-    text = (
-        files("prompt_detailer_router.resources")
-        .joinpath("schemas", schema_filename)
-        .read_text(encoding="utf-8")
-    )
+    text = resource_file("schemas", schema_filename).read_text(encoding="utf-8")
     return json.loads(text)
 
 

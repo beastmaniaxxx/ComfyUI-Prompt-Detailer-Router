@@ -7,19 +7,18 @@ schema_version values.
 
 import copy
 import json
-from importlib.resources import files
 
 import pytest
 from jsonschema import Draft202012Validator
+
+from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
 SEVEN_SCOPES = ("face", "hair", "hands", "body", "upper_body", "clothing", "generic")
 
 
 def _load_schema() -> dict:
-    text = (
-        files("prompt_detailer_router.resources")
-        .joinpath("schemas", "detailer_plan_v1.schema.json")
-        .read_text(encoding="utf-8")
+    text = resource_file("schemas", "detailer_plan_v1.schema.json").read_text(
+        encoding="utf-8"
     )
     return json.loads(text)
 

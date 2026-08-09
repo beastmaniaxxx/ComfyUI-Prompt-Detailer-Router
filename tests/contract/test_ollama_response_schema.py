@@ -6,16 +6,14 @@ Actual LLM calls / prompts / retry are out of this spec's scope (13.3).
 """
 
 import json
-from importlib.resources import files
-
 from jsonschema import Draft202012Validator
+
+from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
 
 def _load_schema() -> dict:
-    text = (
-        files("prompt_detailer_router.resources")
-        .joinpath("schemas", "ollama_response_v1.schema.json")
-        .read_text(encoding="utf-8")
+    text = resource_file("schemas", "ollama_response_v1.schema.json").read_text(
+        encoding="utf-8"
     )
     return json.loads(text)
 

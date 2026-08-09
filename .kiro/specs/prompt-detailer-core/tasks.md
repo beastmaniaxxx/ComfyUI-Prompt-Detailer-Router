@@ -218,3 +218,5 @@
   - builder template の format_spec/conversion を拒否（`{features:{oops}}`/`{features!r}` を読込時 `ConfigurationError`）。
   - `infrastructure/config_json.parse_config_json` を新設し、重複キー・非 object・構文エラーを一括で `ConfigurationError` 化。preset/policy/template loader を集約。
   - task 6.2 の完了条件を満たすため多様 fixture（illustration/face_closeup/full_body/short/contradictory）を追加し、integration を全 fixture で parametrize（媒体語の非混入・短文/矛盾の fallback 往復も検証）。
+- **PR#2 Codex レビュー 第7ラウンド対応（P2×1）**:
+  - **Python 3.10 互換**: `Traversable.joinpath` は 3.10 では単一引数のみ（zip/namespace 配置で複数引数は `TypeError`）。`infrastructure/resource_paths.resource_file(*parts)` を新設し一段ずつ連結。preset/policy/template/schema の全 loader と contract テストヘルパを集約（`Traversable` 型 import は 3.11+ 限定のため `TYPE_CHECKING` ガード）。
