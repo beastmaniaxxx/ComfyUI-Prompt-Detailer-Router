@@ -164,3 +164,18 @@ def test_separator_orphaned_by_removal_is_still_repaired() -> None:
         "cinematic... portrait, beautiful, eyes", TERMS, MATCH
     )
     assert result.text == "cinematic... portrait, eyes"
+
+
+def test_consecutive_removals_leave_no_residual_separators() -> None:
+    # Consecutive forbidden terms leave adjacent removal markers; the repair must
+    # run to a fixpoint so no dangling separators or empty brackets survive
+    # (Issue #3 / Req 9.3).
+    assert apply_forbidden_terms("beautiful, perfect, face", TERMS, MATCH).text == (
+        "face"
+    )
+    assert apply_forbidden_terms(
+        "face, beautiful, perfect, hair", TERMS, MATCH
+    ).text == "face, hair"
+    assert apply_forbidden_terms(
+        "(beautiful perfect), face", TERMS, MATCH
+    ).text == "face"

@@ -235,3 +235,6 @@
   - **必須文字列の空白拒否**: `_require_str_fields` に `.strip()` 空チェックを追加（空 `upscale_prompt` 等の degenerate 出力を読込時に排除）。
   - **profile mapping キーの完全一致**: `parse_detailer_profile` で未知 scope キー（`feet` 等）を拒否し、`parse_detailer_preset` で `scope ∈ SUPPORTED_SCOPES` を検証（到達不能な設定の黙認を防止）。
   - **レビュー打ち切り方針（AGENTS §17.1/§17.2）**: 本PRのCodexレビューは**ラウンド10（上限）で完了**とし、以降の新規指摘は受け付けない。§17.2 のとおりラウンド5以降の新規観点は原則対象外だが、第10ラウンドの4件は contract/AGENTS に根拠があり妥当だったため最終ラウンドとして修正しきった。
+- **Issue #3 対応（ラウンド10後の積み残しP2×2・別PR）**: PR#2 マージ後、ラウンド10到達後に挙がった2件を [#3](https://github.com/beastmaniaxxx/ComfyUI-Prompt-Detailer-Router/issues/3) 経由の別PRで対応（develop ベース `fix/issue-3-forbidden-terms-and-preset-scope`）。
+  - **禁止語連続除去の修復漏れ（回帰）**: `_repair_removal_sites` を単一パスから **fixpoint ループ＋隣接センチネル畳み込み（`_ADJACENT_SENTINELS`）** へ変更。`"beautiful, perfect, face"`→`"face"`、`"face, beautiful, perfect, hair"`→`"face, hair"`、`"(beautiful perfect), face"`→`"face"`。非連続除去・無関係な `...` 保持は不変。
+  - **Detailer preset の scope==ファイル名 過剰制約の撤去**: 第10ラウンドで追加した `load_detailer_preset` の `preset.scope == preset_id` 検査を撤去（Req 10.5／design 契約：preset ID は scope と同一である必要はなく `face -> portrait_face_v1` を許容）。scope 整合は `verify_profile_targets` に委譲。upscale の `preset_id`／profile の `profile_id` 検査は妥当なため維持。

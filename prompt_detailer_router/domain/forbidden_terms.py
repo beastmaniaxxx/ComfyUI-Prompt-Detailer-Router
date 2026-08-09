@@ -43,6 +43,10 @@ _ORPHAN_UNDERSCORE_RIGHT = re.compile(r"_+(?![A-Za-z0-9])")
 #   - an empty bracket pair that wrapped the removed term: "(sentinel)" -> ""
 #   - a separator orphaned on both sides: "a, sentinel, b" -> "a, b"
 #   - a separator left dangling at the string start/end by the removal.
+# A run of sentinels left by consecutive removals (e.g. "beautiful perfect" ->
+# two adjacent markers). Collapsing them to one lets the single-site rules below
+# see a single removal marker instead of several.
+_ADJACENT_SENTINELS = re.compile(rf"{_S}(?:\s*{_S})+")
 _SENT_EMPTY_BRACKETS = re.compile(rf"[(\[{{]\s*{_S}\s*[)\]}}]")
 _SENT_BETWEEN_SEPARATORS = re.compile(rf"[,;.]\s*{_S}\s*([,;.])")
 _SENT_LEADING_SEPARATOR = re.compile(rf"^\s*{_S}\s*[,;.]")
@@ -70,12 +74,22 @@ def _repair_removal_sites(working: str) -> str:
     repair cannot reach unrelated punctuation elsewhere in the text. The
     sentinels are dropped at the end, then underscores orphaned by the removal
     are tidied.
+
+    The single-site rules are applied to a fixpoint: consecutive removals leave
+    adjacent sentinels (possibly separated by the separators that stood between
+    the removed items), and one pass would leave residual markers/separators
+    (e.g. "beautiful, perfect, face"). Every rule only shrinks the string, so
+    the loop is guaranteed to terminate.
     """
 
-    working = _SENT_EMPTY_BRACKETS.sub(_SENTINEL, working)
-    working = _SENT_BETWEEN_SEPARATORS.sub(rf"{_SENTINEL}\1", working)
-    working = _SENT_LEADING_SEPARATOR.sub(_SENTINEL, working)
-    working = _SENT_TRAILING_SEPARATOR.sub(_SENTINEL, working)
+    previous = ""
+    while working != previous:
+        previous = working
+        working = _ADJACENT_SENTINELS.sub(_SENTINEL, working)
+        working = _SENT_EMPTY_BRACKETS.sub(_SENTINEL, working)
+        working = _SENT_BETWEEN_SEPARATORS.sub(rf"{_SENTINEL}\1", working)
+        working = _SENT_LEADING_SEPARATOR.sub(_SENTINEL, working)
+        working = _SENT_TRAILING_SEPARATOR.sub(_SENTINEL, working)
     working = working.replace(_SENTINEL, "")
     working = _ORPHAN_UNDERSCORE_LEFT.sub("", working)
     working = _ORPHAN_UNDERSCORE_RIGHT.sub("", working)
