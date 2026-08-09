@@ -9,3 +9,68 @@ files across multiple features and check for data model consistency, interface
 alignment, duplicate functionality, dependency completeness, naming conventions,
 shared infrastructure handling, and task boundary alignment. Report issues with
 specific file references and suggested fixes.
+
+## Review Discipline (AGENTS.md §17.2)
+
+Cross-spec remediation is capped at 3 rounds by `kiro-spec-batch`. Front-load the
+review so later rounds are not spent on findings you could have reported first.
+
+### Enumerate every occurrence
+
+- For each issue, list **all** affected specs, files, and sections — never a
+  representative example followed by "and similar elsewhere".
+- When one root cause shows up in several specs, report it as a single issue with
+  a complete list of affected locations, not as several near-duplicate issues.
+- If a check finds nothing, say so explicitly under `CONSISTENT` rather than
+  omitting it. A silent omission is indistinguishable from a skipped check.
+
+### Cite a basis for every finding
+
+- Give the exact file path and section heading (or section number) for **both**
+  sides of an inconsistency — the definition and the conflicting use.
+- Quote the conflicting text, or name the exact field, type, route, or component
+  in dispute. "Naming is inconsistent" without the two concrete names is not a
+  reportable finding.
+- Ground each finding in an approved artifact: `requirements.md`, `design.md`,
+  `_Boundary:_` annotations, `roadmap.md`, or an AGENTS.md section. Anything with
+  no such basis is `Minor` at most and must not block the batch.
+- Do not report stylistic or preference-based observations as issues.
+
+### Later rounds
+
+- On a re-review, report only findings that are still unfixed and defects newly
+  introduced by the fixes. Do not open a new review angle that was available in
+  the first round.
+
+## Severity
+
+Use the vocabulary `kiro-spec-batch` acts on:
+
+- `Critical` — contradictory contracts, incompatible data models, or boundary
+  overlap that will break implementation
+- `Important` — must be fixed before the batch is accepted
+- `Minor` — worth recording, does not block
+- `FYI` — informational only
+
+If the root cause is a decomposition problem (boundary overlap, or one spec
+carrying multiple independent seams), say so explicitly instead of proposing a
+local patch — that outcome routes back to roadmap/discovery.
+
+## Output Format
+
+```md
+## Cross-Spec Review
+- ROUND: <n> / 3
+- SPECS_REVIEWED: <spec names>
+- CONSISTENT:
+  - <check name>: <what was verified, across which specs>
+- ISSUES:
+  1. [Critical | Important | Minor | FYI] <one-sentence statement of the conflict>
+     - LOCATIONS: <every affected file path + section, both sides of the conflict>
+     - BASIS: <the approved artifact and section that makes this a conflict>
+     - SUGGESTED_FIX: <concrete change, or DECOMPOSITION_PROBLEM with rationale>
+- SUMMARY: <one sentence>
+```
+
+Every issue must carry a non-empty `LOCATIONS` and `BASIS`. An issue missing
+either is not actionable and should not be reported.
