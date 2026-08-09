@@ -33,7 +33,7 @@ ComfyUI-Prompt-Detailer-Router は、元画像の生成プロンプトを Ollama
 
 ## Specs (dependency order)
 
-- [ ] prompt-detailer-core -- `DetailerPlan`、scope、schema、preset、prompt builder、validator を定義する共有 domain/application 基盤。Dependencies: none
+- [x] prompt-detailer-core -- `DetailerPlan`、scope、schema、preset、prompt builder、validator を定義する共有 domain/application 基盤。Dependencies: none
 - [ ] ollama-prompt-analyzer -- Ollama `/api/chat` による構造化解析、retry、fallback、diagnostics、Analyzer node を実装する。Dependencies: prompt-detailer-core
 - [ ] detailer-plan-selection -- `DETAILER_PLAN` から task を選択する Select、Inspector、From JSON、`missing_behavior` を実装する。Dependencies: prompt-detailer-core
 - [ ] dynamic-detailer-task-combo -- Analyzer の `scopes` から Selector の `task_id` 候補を動的更新する frontend extension を実装する。Dependencies: prompt-detailer-core, ollama-prompt-analyzer, detailer-plan-selection
