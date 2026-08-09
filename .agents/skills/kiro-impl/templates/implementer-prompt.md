@@ -59,6 +59,16 @@ If any of these cannot be determined from the spec — the requirements are too 
 - Verify that any newly introduced runtime-sensitive dependency or packaging assumption (native modules, module-format boundaries, generated assets, required env vars, boot-time config) is reflected in validation or called out explicitly in `CONCERNS`
 - If any review check fails, fix the implementation, re-run validation, and repeat this step
 
+### Step 5b: Recurring Defect Checklist (AGENTS.md §22)
+- Read AGENTS.md §22 and apply every subsection that touches your diff. These classes caused most findings on past PRs; satisfy them up front instead of waiting to be told.
+- Config/resource loaders: validate value types before constructing dataclasses, reject whitespace-only required strings, reject unknown fields, reject duplicate JSON keys and non-object roots, convert decode/encoding failures to `ConfigurationError`, restrict resource ids to a safe stem and confirm the resolved path stays under the resource directory. Apply the shared helper — do not let a new loader skip checks the others perform.
+- String post-processing: repair the removal site (separators, empty brackets, runs, leading/trailing) in the same change; do not rely on `\b` for word boundaries; do not alter punctuation unrelated to the removal; no iteration-capped fixpoints; no nested quantifiers; measure worst-case input when the input length is unbounded.
+- Domain models: keep `validate_*` self-contained, enforce `task_id` composition and `(subject_id, scope)` uniqueness, reject empty/whitespace `subject_id`, coerce sequences to tuples in `__post_init__`, wrap mappings in `MappingProxyType`, keep `encode`/`decode` symmetric (Tier1 schema then Tier2 invariants), include field paths in validation messages.
+- Presets: keep each detailer preset within its own scope and each upscale preset subject-agnostic; when you touch one preset, audit all of them.
+- Resources and versions: no prompt text hardcoded in Python, version constants defined and importable, `schema_version` required on external interfaces with a contract test.
+- Tests and runtime: create every fixture kind the task's completion criteria lists; keep to Python 3.10 APIs (`Traversable.joinpath` takes a single argument).
+- If a class does not apply to your diff, say so in one line rather than silently skipping it.
+
 ### Step 6: Ripple Check (AGENTS.md §16)
 - Do NOT report `READY_FOR_REVIEW` based on the changed files alone
 - Take every symbol, key, and identifier you changed (function/class/field names, node IDs, socket names, schema keys, scope names, preset keys, resource file names) and search the whole repository for other places that depend on them
