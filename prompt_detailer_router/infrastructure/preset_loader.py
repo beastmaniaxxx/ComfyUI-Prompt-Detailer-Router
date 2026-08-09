@@ -62,12 +62,17 @@ def _read_json(*parts: str) -> dict:
 
 
 def loads_config_json(text: str, what: str) -> dict:
-    """Parse config JSON, converting syntax errors to ConfigurationError."""
+    """Parse config JSON into an object, converting errors to ConfigurationError."""
 
     try:
-        return json.loads(text)
+        data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ConfigurationError(f"Resource is not valid JSON: {what} ({exc})") from exc
+    if not isinstance(data, dict):
+        raise ConfigurationError(
+            f"Resource must be a JSON object: {what} (got {type(data).__name__})."
+        )
+    return data
 
 
 def _require_keys(data: dict, keys: tuple[str, ...], what: str) -> None:

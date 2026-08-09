@@ -222,3 +222,21 @@ def test_duplicate_requested_scope_is_rejected() -> None:
     plan = _plan([_task("face")], requested=("face", "face"))
     issues = validate_plan(plan)
     assert any(i.code == "duplicate_requested_scope" for i in issues)
+
+
+def test_empty_subject_id_is_rejected() -> None:
+    # task_id=".face" is formally subject_id + "." + scope, but an empty
+    # subject_id violates the schema minLength and breaks JSON round-trip.
+    bad = DetailerTask(
+        task_id=".face",
+        subject_id="",
+        scope="face",
+        extracted_features=(),
+        prompt_core="",
+        prompt_final="done",
+        order=30,
+        enabled=True,
+        warnings=(),
+    )
+    issues = validate_plan(_plan([bad], requested=("face",)))
+    assert any(i.code == "empty_subject_id" for i in issues)

@@ -96,6 +96,12 @@ def test_malformed_preset_json_raises_configuration_error() -> None:
         preset_loader.loads_config_json("{ not valid json", "presets/detailer/face.json")
 
 
+@pytest.mark.parametrize("text", ["null", "5", '"a string"', "[1, 2]"])
+def test_non_object_preset_json_raises_configuration_error(text: str) -> None:
+    with pytest.raises(ConfigurationError):
+        preset_loader.loads_config_json(text, "presets/detailer/face.json")
+
+
 def test_upscale_preset_wrong_value_type_raises() -> None:
     bad = {
         "version": "1.0",

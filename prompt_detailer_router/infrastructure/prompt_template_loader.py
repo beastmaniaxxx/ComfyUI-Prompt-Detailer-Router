@@ -96,4 +96,8 @@ def load_detailer_builder_template(
         raise ConfigurationError(
             f"Detailer builder template is not valid JSON: {template_id} ({exc})"
         ) from exc
+    if not isinstance(data, dict):
+        raise ConfigurationError(
+            f"Detailer builder template must be a JSON object: {template_id}."
+        )
     return parse_detailer_builder_template(data)

@@ -203,3 +203,8 @@
   - builder template を読込時に `string.Formatter` で解析し `{features}` 以外・不正波括弧を拒否。
   - **セキュリティ**: `infrastructure/resource_ids.safe_resource_id` を追加し全 loader の id（preset/profile/policy/template）を `^[A-Za-z0-9_-]+$` に制限（`..`/絶対パス等のパストラバーサルを拒否）。
   - 禁止語マッチを英数字 lookaround 境界に変更し `_` を区切り扱い（`perfect_face` を除去、`imperfect`/`upper_body` は保持）。除去後に孤立アンダースコアを整形。
+- **PR#2 Codex レビュー 第4ラウンド対応（P2×4）**:
+  - `photographic` preset の `preservation` を被写体非依存化（pose/identity/clothing design を除去、Req 7.2）。upscale snapshot 再生成。
+  - `validate_plan` に空 `subject_id`（空白含む）検証を追加（`empty_subject_id`）。builder は空 subject で往復不能な Plan を返さず fail-fast。
+  - preset/policy/template の JSON 読込境界で **object 検証**を追加（`null`/数値/配列を `ConfigurationError` 化）。
+  - `upper_body` preset の `restrictions` から `background` を除去（scope 分離、Req 8.2）。upper_body snapshot 再生成。

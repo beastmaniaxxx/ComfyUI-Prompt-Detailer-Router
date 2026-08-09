@@ -124,6 +124,15 @@ def validate_plan(plan: DetailerPlan) -> tuple[PlanValidationIssue, ...]:
             )
         seen_ids.add(task.task_id)
 
+        if not task.subject_id.strip():
+            issues.append(
+                PlanValidationIssue(
+                    code="empty_subject_id",
+                    message=f"Task '{task.task_id}' has an empty subject_id.",
+                    task_id=task.task_id,
+                )
+            )
+
         expected_task_id = make_task_id(task.subject_id, task.scope)
         if task.task_id != expected_task_id:
             issues.append(

@@ -2,6 +2,6 @@
   "version": "1.0",
   "preset_id": "photographic",
   "quality_details": "Refine fine detail, natural texture, sharp focus, clean natural contours, accurate color, and coherent background.",
-  "preservation": "Keep the original composition, subject placement, pose, identity, clothing design, and lighting unchanged.",
+  "preservation": "Keep the original composition, subject placement, framing, colors, and lighting unchanged.",
   "restrictions": "Do not redesign the subject or introduce unstated attributes."
 }

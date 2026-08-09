@@ -6,11 +6,14 @@ Covers Requirements 3.1/3.3 (task_id), 5.3 (>=1 enabled task per scope),
 10.6 (default profile), 10.7 (default order).
 """
 
+import pytest
+
 from prompt_detailer_router.application.build_detailer_plan import (
     PlanBuildInput,
     build_detailer_plan,
 )
 from prompt_detailer_router.domain.detailer_plan import SCHEMA_VERSION, validate_plan
+from prompt_detailer_router.domain.errors import PlanValidationError
 from prompt_detailer_router.domain.prompt_analysis import PromptAnalysis
 
 
@@ -91,6 +94,14 @@ def test_is_deterministic() -> None:
         PlanBuildInput(requested_scopes=("face", "hair"), analysis=analysis)
     )
     assert a == b
+
+
+def test_empty_subject_id_is_rejected_by_builder() -> None:
+    analysis = _analysis({"face": ["x"]})
+    with pytest.raises(PlanValidationError):
+        build_detailer_plan(
+            PlanBuildInput(requested_scopes=("face",), analysis=analysis, subject_id="")
+        )
 
 
 def test_custom_subject_id_used_in_task_id() -> None:
