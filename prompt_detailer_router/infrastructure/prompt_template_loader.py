@@ -9,12 +9,12 @@ that prompt text lives in resources so changes are version-tracked.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from importlib.resources import files
 from string import Formatter
 
 from prompt_detailer_router.domain.errors import ConfigurationError
+from prompt_detailer_router.infrastructure.config_json import parse_config_json
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 
 DEFAULT_DETAILER_BUILDER_ID = "detailer_builder_v1"
@@ -38,19 +38,33 @@ def _validate_template_fields(template: str) -> None:
     """
 
     try:
-        fields = [
-            field for _, field, _, _ in Formatter().parse(template) if field is not None
-        ]
+        parsed = list(Formatter().parse(template))
     except ValueError as exc:
         raise ConfigurationError(
             f"feature_clause_template has malformed format braces ({exc})."
         ) from exc
+    fields = [field for _, field, _, _ in parsed if field is not None]
     unexpected = sorted({field for field in fields if field != "features"})
     if unexpected:
         raise ConfigurationError(
             "feature_clause_template may only use the '{features}' placeholder; "
             f"found: {', '.join(unexpected)}."
         )
+    # Reject format specs and conversions (e.g. "{features:{oops}}" or
+    # "{features!r}") since they can trigger nested/format errors at render time.
+    for _, field, spec, conversion in parsed:
+        if field is None:
+            continue
+        if spec:
+            raise ConfigurationError(
+                "feature_clause_template must not use a format spec on "
+                f"'{{{field}}}'."
+            )
+        if conversion is not None:
+            raise ConfigurationError(
+                "feature_clause_template must not use a conversion on "
+                f"'{{{field}}}'."
+            )
     if "features" not in fields:
         raise ConfigurationError(
             "feature_clause_template must contain the '{features}' placeholder."
@@ -90,14 +104,6 @@ def load_detailer_builder_template(
         raise ConfigurationError(
             f"Detailer builder template not found: {template_id}"
         ) from exc
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ConfigurationError(
-            f"Detailer builder template is not valid JSON: {template_id} ({exc})"
-        ) from exc
-    if not isinstance(data, dict):
-        raise ConfigurationError(
-            f"Detailer builder template must be a JSON object: {template_id}."
-        )
-    return parse_detailer_builder_template(data)
+    return parse_detailer_builder_template(
+        parse_config_json(text, f"prompts/{template_id}.json")
+    )

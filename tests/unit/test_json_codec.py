@@ -133,6 +133,31 @@ def test_encode_invalid_plan_raises_validation_error() -> None:
         json_codec.encode_plan(bad_plan)
 
 
+def test_encode_schema_invalid_plan_raises_validation_error() -> None:
+    # Tier 2 (validate_plan) passes but Tier 1 shape/version fails: an incompatible
+    # schema_version and a boolean order would be rejected by decode_plan, so
+    # encode must refuse them too to keep the round trip intact.
+    task = DetailerTask(
+        task_id="main.face",
+        subject_id="main",
+        scope="face",
+        extracted_features=(),
+        prompt_core="",
+        prompt_final="done",
+        order=True,  # boolean, not a valid schema integer
+        enabled=True,
+        warnings=(),
+    )
+    plan = DetailerPlan(
+        schema_version=2,  # const 1 in the schema
+        requested_scopes=("face",),
+        tasks=(task,),
+        warnings=(),
+    )
+    with pytest.raises(PlanValidationError):
+        json_codec.encode_plan(plan)
+
+
 def test_decode_duplicate_key_raises_plan_decode_error() -> None:
     raw = (
         '{"schema_version": 1, "schema_version": 1, '

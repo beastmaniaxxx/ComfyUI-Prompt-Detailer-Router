@@ -7,7 +7,6 @@ missing keys, missing mappings, or scope mismatches raise ConfigurationError.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from importlib.resources import files
 from types import MappingProxyType
@@ -15,6 +14,7 @@ from typing import Mapping
 
 from prompt_detailer_router.domain.errors import ConfigurationError
 from prompt_detailer_router.domain.scopes import SUPPORTED_SCOPES
+from prompt_detailer_router.infrastructure.config_json import parse_config_json
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 
 DEFAULT_PROFILE_ID = "default_v1"
@@ -62,17 +62,13 @@ def _read_json(*parts: str) -> dict:
 
 
 def loads_config_json(text: str, what: str) -> dict:
-    """Parse config JSON into an object, converting errors to ConfigurationError."""
+    """Parse config JSON into an object, converting errors to ConfigurationError.
 
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ConfigurationError(f"Resource is not valid JSON: {what} ({exc})") from exc
-    if not isinstance(data, dict):
-        raise ConfigurationError(
-            f"Resource must be a JSON object: {what} (got {type(data).__name__})."
-        )
-    return data
+    Thin wrapper over the shared :func:`parse_config_json` (kept for callers and
+    tests that reference this module).
+    """
+
+    return parse_config_json(text, what)
 
 
 def _require_keys(data: dict, keys: tuple[str, ...], what: str) -> None:

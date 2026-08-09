@@ -6,12 +6,12 @@ both the upscale and detailer builders apply.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from importlib.resources import files
 
 from prompt_detailer_router.domain.errors import ConfigurationError
 from prompt_detailer_router.domain.forbidden_terms import CASE_INSENSITIVE_LITERAL
+from prompt_detailer_router.infrastructure.config_json import parse_config_json
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 
 DEFAULT_POLICY_ID = "forbidden_terms_v1"
@@ -63,14 +63,4 @@ def load_forbidden_terms_policy(policy_id: str = DEFAULT_POLICY_ID) -> Forbidden
         raise ConfigurationError(
             f"Forbidden-terms policy not found: {policy_id}"
         ) from exc
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ConfigurationError(
-            f"Forbidden-terms policy is not valid JSON: {policy_id} ({exc})"
-        ) from exc
-    if not isinstance(data, dict):
-        raise ConfigurationError(
-            f"Forbidden-terms policy must be a JSON object: {policy_id}."
-        )
-    return parse_policy(data)
+    return parse_policy(parse_config_json(text, f"policies/{policy_id}.json"))

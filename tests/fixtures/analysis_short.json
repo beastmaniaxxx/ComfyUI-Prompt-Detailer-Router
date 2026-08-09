@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "global": {
+    "style": ["photo"]
+  },
+  "scoped_features": {
+    "face": ["a face"]
+  },
+  "warnings": ["very short original prompt"]
+}

@@ -213,3 +213,8 @@
   - `generic` preset の `restrictions` から `surrounding scene` を除去（scope 分離、Req 8.2）。generic snapshot 再生成。
   - `encode_plan` に直列化前の `validate_plan` を追加（不正 Plan を `PlanValidationError` 化、`decode_plan` と対称に往復契約を保証、Req 12.3）。
   - 全 preset を横断監査し scope/subject 混入は解消済み（minimal の `subject` は汎用、他 scope は限定でクリーン）。
+- **PR#2 Codex レビュー 第6ラウンド対応（P2×4）**:
+  - `encode_plan` に Tier1 Schema 検証を追加（`schema_version!=1`/`order=bool` 等を `PlanValidationError` 化、decode と完全対称）。
+  - builder template の format_spec/conversion を拒否（`{features:{oops}}`/`{features!r}` を読込時 `ConfigurationError`）。
+  - `infrastructure/config_json.parse_config_json` を新設し、重複キー・非 object・構文エラーを一括で `ConfigurationError` 化。preset/policy/template loader を集約。
+  - task 6.2 の完了条件を満たすため多様 fixture（illustration/face_closeup/full_body/short/contradictory）を追加し、integration を全 fixture で parametrize（媒体語の非混入・短文/矛盾の fallback 往復も検証）。

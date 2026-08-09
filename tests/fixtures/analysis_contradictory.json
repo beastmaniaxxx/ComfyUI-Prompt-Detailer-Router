@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "global": {
+    "style": ["photo"]
+  },
+  "scoped_features": {
+    "hair": ["short black hair", "long blonde hair"],
+    "face": ["young face", "elderly face"]
+  },
+  "warnings": ["contradictory features detected in the original prompt"]
+}

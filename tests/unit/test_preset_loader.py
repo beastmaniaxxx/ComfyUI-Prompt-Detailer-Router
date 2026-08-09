@@ -102,6 +102,12 @@ def test_non_object_preset_json_raises_configuration_error(text: str) -> None:
         preset_loader.loads_config_json(text, "presets/detailer/face.json")
 
 
+def test_duplicate_key_preset_json_raises_configuration_error() -> None:
+    text = '{"version": "1.0", "version": "2.0"}'
+    with pytest.raises(ConfigurationError):
+        preset_loader.loads_config_json(text, "presets/detailer/face.json")
+
+
 def test_upscale_preset_wrong_value_type_raises() -> None:
     bad = {
         "version": "1.0",

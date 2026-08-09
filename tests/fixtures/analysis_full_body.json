@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "global": {
+    "style": ["full body studio shot"],
+    "environment": ["plain studio backdrop"]
+  },
+  "scoped_features": {
+    "face": ["neutral expression"],
+    "hair": ["long wavy hair"],
+    "hands": ["hands in pockets"],
+    "upper_body": ["denim jacket"],
+    "clothing": ["blue jeans"],
+    "body": ["standing pose"]
+  },
+  "warnings": []
+}
