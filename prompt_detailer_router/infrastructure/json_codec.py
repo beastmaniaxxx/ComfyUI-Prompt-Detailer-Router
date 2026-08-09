@@ -60,17 +60,13 @@ def plan_to_dict(plan: DetailerPlan) -> dict:
 def encode_plan(plan: DetailerPlan) -> str:
     """Serialize a plan to a JSON string, preserving all fields deterministically.
 
-    Validates both Tier 2 business invariants and Tier 1 shape/version before
-    serialization so ``encode_plan`` never emits schema-non-compliant JSON,
-    keeping the ``encode`` -> ``decode`` round trip contract intact even for a
-    plan built in memory by another caller (e.g. schema_version != 1 or a
-    boolean ``order``).
+    Validates Tier 1 shape/version first, then Tier 2 business invariants, before
+    serialization so ``encode_plan`` never emits schema-non-compliant JSON and
+    keeps the ``encode`` -> ``decode`` round trip intact even for a plan built in
+    memory by another caller (e.g. schema_version != 1, a boolean ``order``, or a
+    None field). Tier 1 first ensures type violations surface as
+    PlanValidationError rather than a raw AttributeError inside Tier 2.
     """
-
-    issues = validate_plan(plan)
-    if issues:
-        details = "; ".join(issue.message for issue in issues)
-        raise PlanValidationError(f"Cannot encode invalid plan: {details}")
 
     data = plan_to_dict(plan)
     schema_errors = sorted(
@@ -79,6 +75,11 @@ def encode_plan(plan: DetailerPlan) -> str:
     if schema_errors:
         details = "; ".join(_format_schema_error(error) for error in schema_errors)
         raise PlanValidationError(f"Cannot encode schema-invalid plan: {details}")
+
+    issues = validate_plan(plan)
+    if issues:
+        details = "; ".join(issue.message for issue in issues)
+        raise PlanValidationError(f"Cannot encode invalid plan: {details}")
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 

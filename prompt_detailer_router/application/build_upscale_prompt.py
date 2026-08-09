@@ -13,6 +13,9 @@ from dataclasses import dataclass
 
 from prompt_detailer_router.domain.forbidden_terms import apply_forbidden_terms
 from prompt_detailer_router.domain.prompt_analysis import PromptAnalysis
+from prompt_detailer_router.domain.versions import (
+    PROMPT_BUILDER_VERSION as PROMPT_BUILDER_VERSION,
+)
 from prompt_detailer_router.domain.prompt_text import dedup_features, join_prompt
 from prompt_detailer_router.infrastructure.policy_loader import load_forbidden_terms_policy
 from prompt_detailer_router.infrastructure.preset_loader import load_upscale_preset

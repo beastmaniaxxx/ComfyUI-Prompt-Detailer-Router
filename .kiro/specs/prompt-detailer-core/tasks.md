@@ -220,3 +220,7 @@
   - task 6.2 の完了条件を満たすため多様 fixture（illustration/face_closeup/full_body/short/contradictory）を追加し、integration を全 fixture で parametrize（媒体語の非混入・短文/矛盾の fallback 往復も検証）。
 - **PR#2 Codex レビュー 第7ラウンド対応（P2×1）**:
   - **Python 3.10 互換**: `Traversable.joinpath` は 3.10 では単一引数のみ（zip/namespace 配置で複数引数は `TypeError`）。`infrastructure/resource_paths.resource_file(*parts)` を新設し一段ずつ連結。preset/policy/template/schema の全 loader と contract テストヘルパを集約（`Traversable` 型 import は 3.11+ 限定のため `TYPE_CHECKING` ガード）。
+- **PR#2 Codex レビュー 第8ラウンド対応（P2×3）**:
+  - `encode_plan` を Tier1(Schema)→Tier2(`validate_plan`) 順に変更（`subject_id=None` 等の型違反を `PlanValidationError` 化、`.strip()` の生 `AttributeError` を回避）。
+  - `repair_separators` を句点隣接・空括弧へ拡張（`". x"`/`"x.. y"`/`"()"` を整形。複数文プロンプトは不変で snapshot 影響なし）。
+  - `domain/versions.PROMPT_BUILDER_VERSION` を新設し両 Builder で明示 re-export（design 契約どおり下流 Analyzer の cache key 再現性根拠として import 可能に）。

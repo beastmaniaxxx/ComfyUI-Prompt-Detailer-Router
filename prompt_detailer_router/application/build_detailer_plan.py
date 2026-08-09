@@ -27,6 +27,9 @@ from prompt_detailer_router.domain.forbidden_terms import apply_forbidden_terms
 from prompt_detailer_router.domain.order_defaults import default_order_for
 from prompt_detailer_router.domain.prompt_analysis import PromptAnalysis, features_for_scope
 from prompt_detailer_router.domain.prompt_text import dedup_features, join_prompt
+from prompt_detailer_router.domain.versions import (
+    PROMPT_BUILDER_VERSION as PROMPT_BUILDER_VERSION,
+)
 from prompt_detailer_router.infrastructure.policy_loader import (
     ForbiddenTermsPolicy,
     load_forbidden_terms_policy,

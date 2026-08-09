@@ -105,3 +105,26 @@ def test_intra_token_underscore_is_preserved() -> None:
     result = apply_forbidden_terms("upper_body, beautiful detail", TERMS, MATCH)
     assert "upper_body" in result.text
     assert "beautiful" not in result.text.lower()
+
+
+def test_leading_period_repaired_after_removal() -> None:
+    result = apply_forbidden_terms("beautiful. photorealistic", TERMS, MATCH)
+    assert result.text == "photorealistic"
+
+
+def test_double_period_repaired_after_removal() -> None:
+    result = apply_forbidden_terms("face. beautiful. hair", TERMS, MATCH)
+    assert result.text == "face. hair"
+
+
+def test_empty_brackets_removed_after_removal() -> None:
+    result = apply_forbidden_terms("(beautiful), face", TERMS, MATCH)
+    assert result.text == "face"
+    assert "()" not in result.text
+
+
+def test_multi_sentence_text_is_preserved() -> None:
+    # No removal: legitimate multi-sentence text keeps its periods intact.
+    text = "Keep the shape. Refine the texture. Do not redesign."
+    result = apply_forbidden_terms(text, TERMS, MATCH)
+    assert result.text == text

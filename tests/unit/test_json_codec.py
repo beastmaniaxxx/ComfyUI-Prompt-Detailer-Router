@@ -158,6 +158,30 @@ def test_encode_schema_invalid_plan_raises_validation_error() -> None:
         json_codec.encode_plan(plan)
 
 
+def test_encode_none_field_raises_validation_error_not_attribute_error() -> None:
+    # None-typed fields must surface as PlanValidationError (Tier 1 first), not a
+    # raw AttributeError from Tier 2's .strip().
+    task = DetailerTask(
+        task_id="main.face",
+        subject_id=None,  # type: ignore[arg-type]
+        scope="face",
+        extracted_features=(),
+        prompt_core="",
+        prompt_final=None,  # type: ignore[arg-type]
+        order=30,
+        enabled=True,
+        warnings=(),
+    )
+    plan = DetailerPlan(
+        schema_version=SCHEMA_VERSION,
+        requested_scopes=("face",),
+        tasks=(task,),
+        warnings=(),
+    )
+    with pytest.raises(PlanValidationError):
+        json_codec.encode_plan(plan)
+
+
 def test_decode_duplicate_key_raises_plan_decode_error() -> None:
     raw = (
         '{"schema_version": 1, "schema_version": 1, '
