@@ -59,6 +59,19 @@ If any of these cannot be determined from the spec — the requirements are too 
 - Verify that any newly introduced runtime-sensitive dependency or packaging assumption (native modules, module-format boundaries, generated assets, required env vars, boot-time config) is reflected in validation or called out explicitly in `CONCERNS`
 - If any review check fails, fix the implementation, re-run validation, and repeat this step
 
+### Step 6: Ripple Check (AGENTS.md §16)
+- Do NOT report `READY_FOR_REVIEW` based on the changed files alone
+- Take every symbol, key, and identifier you changed (function/class/field names, node IDs, socket names, schema keys, scope names, preset keys, resource file names) and search the whole repository for other places that depend on them
+- Check at minimum: node registration and `NODE_CLASS_MAPPINGS`, callers in `application/` and `domain/`, serialization in `infrastructure/`, `resources/schemas/`, `resources/presets/`, `resources/prompts/`, `web/js/`, all test categories and fixtures, `docs/`, `README`, example workflows
+- Fix every impacted location that falls inside the task `_Boundary:_` within this task
+- For impacts outside the boundary, do NOT edit them — list them in `RIPPLE_OUT_OF_BOUNDARY` with a proposed disposition
+- Record the exact search commands you ran; a Ripple Report without them is invalid and will be rejected
+
+### Step 7: Remediation Reporting (only when fixing review findings)
+- Do NOT fix only the exact location the reviewer named
+- For each finding, search the repository for the same class of defect and fix every occurrence found within the boundary in this same round
+- Report the search command and the additional locations fixed (or `NONE` with justification) in `SAME_KIND_SEARCH` / `SAME_KIND_FIXED`
+
 ## Critical Constraints
 - Do NOT update `tasks.md`
 - Do NOT create commits
@@ -90,4 +103,26 @@ The parent controller parses the exact `- STATUS:` line. Do NOT rename the headi
 - BLOCKER_REMEDIATION: <only for BLOCKED -- what would unblock this? e.g., "design.md section 3.2 specifies API X but it doesn't exist; update design or provide alternative">
 - MISSING: <only for NEEDS_CONTEXT -- describe exactly what additional context is needed and where it might be found>
 - EVIDENCE: <concrete code paths, functions, and tests that prove the behavior>
+```
+
+Immediately after the status block, append the Ripple Report (AGENTS.md §16.4). It is mandatory for every task with a non-empty diff, except documentation-only changes.
+
+```
+## Ripple Report
+- SEARCH_KEYS: <symbols, keys, and identifiers you searched for>
+- SEARCH_COMMANDS: <the exact search commands you ran>
+- IMPACTED_IN_BOUNDARY: <file:line locations you fixed inside the boundary>
+- IMPACTED_OUT_OF_BOUNDARY: <locations outside the boundary and the proposed disposition -- NONE if none>
+- NO_IMPACT_CONFIRMED: <areas you searched that turned out to be unaffected>
+```
+
+When this dispatch is remediation for review findings, also append one Remediation Report block per finding (AGENTS.md §17.3).
+
+```
+## Remediation Report
+- FINDING: <finding id / summary>
+- ROOT_CAUSE: <cause>
+- FIXED_AT: <the location the reviewer named>
+- SAME_KIND_SEARCH: <command used to find the same class of defect elsewhere>
+- SAME_KIND_FIXED: <additional locations fixed -- NONE with justification if none>
 ```

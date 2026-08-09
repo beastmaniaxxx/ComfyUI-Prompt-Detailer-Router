@@ -83,7 +83,7 @@ If multi-agent is not available, execute features in the wave sequentially.
 
 ## Step 4: Cross-Spec Review
 
-After all waves complete, spawn a **single sub-agent** for cross-spec consistency review. Use the `spec-reviewer` agent if available (defined in `.gemini/agents/spec-reviewer.md`). This is the highest-value quality gate -- it catches issues that per-spec review gates cannot.
+After all waves complete, spawn a **single sub-agent** for cross-spec consistency review. Use the `spec-reviewer` agent if available (defined in `.agents/agents/spec-reviewer.md`, surfaced to hosts via the `.codex/agents` and `.gemini/agents` symlinks). This is the highest-value quality gate -- it catches issues that per-spec review gates cannot.
 
 **Sub-agent task**:
 
@@ -107,7 +107,14 @@ Check:
 9. **Architecture boundary integrity**: Do the specs preserve clean responsibility seams, avoid shared ownership, keep dependency direction coherent, and include enough revalidation triggers to catch downstream impact?
 10. **Change-friendly decomposition**: Has any spec absorbed multiple independent seams that should probably be split instead of kept together?
 
-Output: CONSISTENT areas + ISSUES with (which specs, what's inconsistent, suggested fix).
+Review discipline (AGENTS.md §17.2) — apply this whether the `spec-reviewer` agent is used or the review runs inline:
+- Report **all** affected specs, files, and sections for each issue; never a representative example
+- Collapse one root cause spanning several specs into a single issue with a complete location list
+- Cite the exact file path and section for **both** sides of each inconsistency, and the approved artifact that makes it a conflict
+- Findings with no basis in `requirements.md`, `design.md`, `_Boundary:_`, `roadmap.md`, or AGENTS.md are `Minor` at most and must not block the batch
+- On a re-review, report only unfixed findings and defects newly introduced by the fixes — do not open a review angle that was available in round 1
+
+Output: the structured `## Cross-Spec Review` block defined in `.agents/agents/spec-reviewer.md` — `CONSISTENT` areas plus `ISSUES`, each carrying severity, a non-empty `LOCATIONS` list, `BASIS`, and `SUGGESTED_FIX`. Reject an issue that lacks `LOCATIONS` or `BASIS` as non-actionable.
 
 **After the review sub-agent returns**:
 - **Critical/important issues found**: Dispatch fix sub-agents for each affected spec to apply the suggested fixes. If the issue is really a decomposition problem (for example boundary overlap or one spec carrying multiple independent seams), stop and return to roadmap/discovery instead of papering over it locally. Re-run cross-spec review after fixes (max 3 remediation rounds).
