@@ -39,18 +39,29 @@ _S = re.escape(_SENTINEL)
 _ORPHAN_UNDERSCORE_LEFT = re.compile(r"(?<![A-Za-z0-9])_+")
 _ORPHAN_UNDERSCORE_RIGHT = re.compile(r"_+(?![A-Za-z0-9])")
 
-# Repairs applied ONLY around a sentinel (i.e. exactly where a term was removed):
-#   - an empty bracket pair that wrapped the removed term: "(sentinel)" -> ""
+# A run of sentinels left by consecutive removals, separated only by whitespace
+# and/or the separators that stood between the removed items (e.g. "beautiful,
+# perfect" or "beautiful perfect"). Collapsing the whole run to one marker lets
+# the single-site rules below see a single removal site, and drops the now
+# orphaned separators between the removed items in one global pass.
+_ADJACENT_SENTINELS = re.compile(rf"{_S}(?:[\s,;.]*{_S})+")
+# Repairs applied ONLY around a (single) sentinel, i.e. exactly where a term was
+# removed:
 #   - a separator orphaned on both sides: "a, sentinel, b" -> "a, b"
 #   - a separator left dangling at the string start/end by the removal.
-# A run of sentinels left by consecutive removals (e.g. "beautiful perfect" ->
-# two adjacent markers). Collapsing them to one lets the single-site rules below
-# see a single removal marker instead of several.
-_ADJACENT_SENTINELS = re.compile(rf"{_S}(?:\s*{_S})+")
-_SENT_EMPTY_BRACKETS = re.compile(rf"[(\[{{]\s*{_S}\s*[)\]}}]")
 _SENT_BETWEEN_SEPARATORS = re.compile(rf"[,;.]\s*{_S}\s*([,;.])")
 _SENT_LEADING_SEPARATOR = re.compile(rf"^\s*{_S}\s*[,;.]")
 _SENT_TRAILING_SEPARATOR = re.compile(rf"[,;.]\s*{_S}\s*$")
+
+# Characters that do not, on their own, make a bracket pair "non-empty": a pair
+# enclosing only these (and nested empty pairs) is an artifact of a removal.
+_INSUBSTANTIAL = frozenset(" \t\r\n\f\v,;.") | {_SENTINEL}
+_OPEN_TO_CLOSE = {"(": ")", "[": "]", "{": "}"}
+_CLOSE_TO_OPEN = {close: opener for opener, close in _OPEN_TO_CLOSE.items()}
+# Safety bound on repair passes. Each pass strictly shrinks the string, and
+# realistic inputs converge in one or two passes; the cap guarantees bounded
+# work even on adversarial input rather than an unbounded fixpoint.
+_MAX_REPAIR_PASSES = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +78,57 @@ class ForbiddenScanResult:
     removed_terms: tuple[str, ...]
 
 
+def _strip_empty_bracket_pairs(text: str) -> str:
+    """Drop bracket pairs that wrapped a removal and now enclose only artifacts.
+
+    A single linear left-to-right pass with a stack. A matched bracket pair is
+    stripped (replaced by one sentinel) only when its interior holds no real
+    content AND it contained at least one sentinel — i.e. it actually wrapped a
+    removed term. A genuinely empty pair the user wrote (``()`` with no removal
+    inside) is left untouched, keeping the repair confined to removal sites.
+    Arbitrary nesting (e.g. "((( sentinel )))") collapses in this one pass, so
+    the caller never re-scans per nesting level — avoiding quadratic blow-up.
+    """
+
+    if not any(ch in text for ch in "([{"):
+        return text
+    out: list[str] = []
+    # Each stack frame: [open index in ``out``, has_substance, has_sentinel].
+    stack: list[list] = []
+    for ch in text:
+        if ch in _OPEN_TO_CLOSE:
+            stack.append([len(out), False, False])
+            out.append(ch)
+        elif ch in _CLOSE_TO_OPEN:
+            if stack and out[stack[-1][0]] == _CLOSE_TO_OPEN[ch]:
+                open_index, has_substance, has_sentinel = stack.pop()
+                if not has_substance and has_sentinel:
+                    del out[open_index:]
+                    out.append(_SENTINEL)
+                    if stack:
+                        stack[-1][2] = True
+                else:
+                    # Real content, or a genuinely empty user-written pair: keep
+                    # it, and treat it as substance for the enclosing pair.
+                    out.append(ch)
+                    if stack:
+                        stack[-1][1] = True
+            else:
+                # Unbalanced/mismatched closer: real content.
+                if stack:
+                    stack[-1][1] = True
+                out.append(ch)
+        elif ch == _SENTINEL:
+            if stack:
+                stack[-1][2] = True
+            out.append(ch)
+        else:
+            if ch not in _INSUBSTANTIAL and stack:
+                stack[-1][1] = True
+            out.append(ch)
+    return "".join(out)
+
+
 def _repair_removal_sites(working: str) -> str:
     """Clean up separators/brackets left exactly where terms were removed.
 
@@ -75,21 +137,22 @@ def _repair_removal_sites(working: str) -> str:
     sentinels are dropped at the end, then underscores orphaned by the removal
     are tidied.
 
-    The single-site rules are applied to a fixpoint: consecutive removals leave
-    adjacent sentinels (possibly separated by the separators that stood between
-    the removed items), and one pass would leave residual markers/separators
-    (e.g. "beautiful, perfect, face"). Every rule only shrinks the string, so
-    the loop is guaranteed to terminate.
+    Passes are bounded (``_MAX_REPAIR_PASSES``): empty brackets are stripped in
+    bulk (linear, any nesting depth), runs of sentinels are collapsed globally,
+    then the separator rules run. Realistic inputs converge in one or two passes;
+    the cap keeps even adversarial input (e.g. thousands of nested brackets)
+    bounded instead of an unbounded fixpoint. Every step only shrinks the string.
     """
 
-    previous = ""
-    while working != previous:
+    for _ in range(_MAX_REPAIR_PASSES):
         previous = working
+        working = _strip_empty_bracket_pairs(working)
         working = _ADJACENT_SENTINELS.sub(_SENTINEL, working)
-        working = _SENT_EMPTY_BRACKETS.sub(_SENTINEL, working)
         working = _SENT_BETWEEN_SEPARATORS.sub(rf"{_SENTINEL}\1", working)
         working = _SENT_LEADING_SEPARATOR.sub(_SENTINEL, working)
         working = _SENT_TRAILING_SEPARATOR.sub(_SENTINEL, working)
+        if working == previous:
+            break
     working = working.replace(_SENTINEL, "")
     working = _ORPHAN_UNDERSCORE_LEFT.sub("", working)
     working = _ORPHAN_UNDERSCORE_RIGHT.sub("", working)

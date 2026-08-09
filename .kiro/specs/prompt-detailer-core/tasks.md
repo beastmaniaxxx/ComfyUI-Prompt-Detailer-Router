@@ -238,3 +238,6 @@
 - **Issue #3 対応（ラウンド10後の積み残しP2×2・別PR）**: PR#2 マージ後、ラウンド10到達後に挙がった2件を [#3](https://github.com/beastmaniaxxx/ComfyUI-Prompt-Detailer-Router/issues/3) 経由の別PRで対応（develop ベース `fix/issue-3-forbidden-terms-and-preset-scope`）。
   - **禁止語連続除去の修復漏れ（回帰）**: `_repair_removal_sites` を単一パスから **fixpoint ループ＋隣接センチネル畳み込み（`_ADJACENT_SENTINELS`）** へ変更。`"beautiful, perfect, face"`→`"face"`、`"face, beautiful, perfect, hair"`→`"face, hair"`、`"(beautiful perfect), face"`→`"face"`。非連続除去・無関係な `...` 保持は不変。
   - **Detailer preset の scope==ファイル名 過剰制約の撤去**: 第10ラウンドで追加した `load_detailer_preset` の `preset.scope == preset_id` 検査を撤去（Req 10.5／design 契約：preset ID は scope と同一である必要はなく `face -> portrait_face_v1` を許容）。scope 整合は `verify_profile_targets` に委譲。upscale の `preset_id`／profile の `profile_id` 検査は妥当なため維持。
+- **PR#4 Codex レビュー対応（P2×2・Issue #3 の別PR上）**: PR#4 で挙がった2件（いずれも同PRの `forbidden_terms.py` 実装が対象）を修正。
+  - **括弧内セパレータ区切りの連続除去修復（Req 9.3）**: `_ADJACENT_SENTINELS` を空白のみ→`[\s,;.]*`（セパレータ区切りも畳み込み）へ一般化。`"(beautiful, perfect), face"`/`"[beautiful; perfect], face"`/`"{beautiful. perfect}, face"` → すべて `"face"`。
+  - **修復ループの二乗時間回避（AGENTS §9）**: 1反復1組しか除去できない `_SENT_EMPTY_BRACKETS` を廃し、スタックベースの線形一括処理 `_strip_empty_bracket_pairs`（任意ネストを1パス）を新設。無制限 fixpoint を上限付きループ（`_MAX_REPAIR_PASSES`）へ変更。`"("*10000+"beautiful"+")"*10000` が約2.7s→約0.004s。除去位置限定の原則を維持するため、除去は「センチネルを内包した括弧」のみ対象とし利用者の素の `()` は保持。

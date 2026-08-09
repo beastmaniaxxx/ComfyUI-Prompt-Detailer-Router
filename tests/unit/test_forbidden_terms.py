@@ -179,3 +179,42 @@ def test_consecutive_removals_leave_no_residual_separators() -> None:
     assert apply_forbidden_terms(
         "(beautiful perfect), face", TERMS, MATCH
     ).text == "face"
+
+
+def test_bracketed_separator_delimited_consecutive_removals() -> None:
+    # Consecutive terms separated by a separator *inside* a bracket must not leave
+    # residual separators or empty brackets (PR#4 review / Req 9.3).
+    assert apply_forbidden_terms(
+        "(beautiful, perfect), face", TERMS, MATCH
+    ).text == "face"
+    assert apply_forbidden_terms(
+        "[beautiful; perfect], face", TERMS, MATCH
+    ).text == "face"
+    assert apply_forbidden_terms(
+        "{beautiful. perfect}, face", TERMS, MATCH
+    ).text == "face"
+
+
+def test_preexisting_empty_brackets_kept_even_with_a_removal() -> None:
+    # An empty bracket pair the user wrote is not a removal artifact, so it is
+    # preserved even when a term is removed elsewhere in the string.
+    assert apply_forbidden_terms(
+        "render () beautiful thing", TERMS, MATCH
+    ).text == "render () thing"
+
+
+def test_deeply_nested_brackets_are_linear_not_quadratic() -> None:
+    # A term wrapped in thousands of nested brackets must be repaired in bulk
+    # (linear), not by re-scanning once per nesting level (PR#4 review: avoid a
+    # quadratic fixpoint that stalls ComfyUI on schema-valid but pathological
+    # input). A quadratic implementation takes seconds; linear is well under 1s.
+    import time
+
+    depth = 20000
+    pathological = "(" * depth + "beautiful" + ")" * depth
+    start = time.perf_counter()
+    result = apply_forbidden_terms(pathological, TERMS, MATCH)
+    elapsed = time.perf_counter() - start
+    assert result.text == ""
+    assert result.removed_count == 1
+    assert elapsed < 1.0
