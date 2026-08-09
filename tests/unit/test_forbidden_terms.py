@@ -145,3 +145,22 @@ def test_no_removal_preserves_empty_brackets() -> None:
     result = apply_forbidden_terms("style () tag", TERMS, MATCH)
     assert result.removed_count == 0
     assert result.text == "style () tag"
+
+
+def test_repair_is_confined_to_the_removal_site() -> None:
+    # A removal elsewhere must not disturb a legitimate ellipsis (or other
+    # punctuation) that is not adjacent to the removed term.
+    result = apply_forbidden_terms(
+        "cinematic... portrait, beautiful eyes", TERMS, MATCH
+    )
+    assert result.removed_count == 1
+    assert result.text == "cinematic... portrait, eyes"
+
+
+def test_separator_orphaned_by_removal_is_still_repaired() -> None:
+    # The comma orphaned by removing the list item is repaired, while the
+    # unrelated ellipsis earlier in the string is preserved.
+    result = apply_forbidden_terms(
+        "cinematic... portrait, beautiful, eyes", TERMS, MATCH
+    )
+    assert result.text == "cinematic... portrait, eyes"

@@ -204,3 +204,104 @@ def test_non_utf8_preset_raises_configuration_error(monkeypatch) -> None:
     )
     with pytest.raises(ConfigurationError):
         preset_loader.load_upscale_preset("photographic")
+
+
+# --- blank required strings are rejected (no empty/degenerate prompt) ---
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+def test_upscale_preset_blank_required_string_raises(blank: str) -> None:
+    bad = {
+        "version": "1.0",
+        "preset_id": "x",
+        "quality_details": blank,
+        "preservation": "keep",
+        "restrictions": "none",
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_upscale_preset(bad)
+
+
+def test_detailer_preset_blank_required_string_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "scope": "face",
+        "preservation": "   ",
+        "local_details": "refine",
+        "restrictions": "none",
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_preset(bad)
+
+
+# --- detailer preset scope must be a supported scope ---
+
+def test_detailer_preset_unsupported_scope_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "scope": "feet",  # not a supported scope
+        "preservation": "keep",
+        "local_details": "refine",
+        "restrictions": "none",
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_preset(bad)
+
+
+# --- profile mapping keys must be exactly the supported scopes ---
+
+def test_detailer_profile_unknown_scope_mapping_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "profile_id": "p",
+        "mappings": {**{s: s for s in SEVEN}, "feet": "feet"},  # extra scope
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_profile(bad)
+
+
+# --- requested id must match the id declared inside the file ---
+
+def test_upscale_preset_id_mismatch_raises(monkeypatch) -> None:
+    monkeypatch.setattr(
+        preset_loader,
+        "_read_json",
+        lambda *parts: {
+            "version": "1.0",
+            "preset_id": "illustration",  # file declares a different id
+            "quality_details": "q",
+            "preservation": "keep",
+            "restrictions": "none",
+        },
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_upscale_preset("photographic")
+
+
+def test_detailer_preset_scope_mismatch_raises(monkeypatch) -> None:
+    monkeypatch.setattr(
+        preset_loader,
+        "_read_json",
+        lambda *parts: {
+            "version": "1.0",
+            "scope": "hair",  # file declares a different scope than requested
+            "preservation": "keep",
+            "local_details": "refine",
+            "restrictions": "none",
+        },
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_detailer_preset("face")
+
+
+def test_detailer_profile_id_mismatch_raises(monkeypatch) -> None:
+    monkeypatch.setattr(
+        preset_loader,
+        "_read_json",
+        lambda *parts: {
+            "version": "1.0",
+            "profile_id": "other",  # file declares a different id than requested
+            "mappings": {s: s for s in SEVEN},
+        },
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_detailer_profile("default_v1")

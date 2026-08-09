@@ -79,10 +79,17 @@ def _require_keys(data: dict, keys: tuple[str, ...], what: str) -> None:
 
 def _require_str_fields(data: dict, keys: tuple[str, ...], what: str) -> None:
     for key in keys:
-        if not isinstance(data[key], str):
+        value = data[key]
+        if not isinstance(value, str):
             raise ConfigurationError(
                 f"{what} field '{key}' must be a string, got "
-                f"{type(data[key]).__name__}."
+                f"{type(value).__name__}."
+            )
+        # A blank required string would yield an empty/degenerate prompt at build
+        # time (e.g. an empty upscale_prompt); reject it at load instead.
+        if not value.strip():
+            raise ConfigurationError(
+                f"{what} field '{key}' must not be empty or whitespace-only."
             )
 
 
@@ -105,6 +112,11 @@ def parse_detailer_preset(data: dict) -> DetailerPreset:
         data, _DETAILER_KEYS + _DETAILER_OPTIONAL_KEYS, "Detailer preset"
     )
     _require_str_fields(data, _DETAILER_KEYS, "Detailer preset")
+    if data["scope"] not in SUPPORTED_SCOPES:
+        raise ConfigurationError(
+            f"Detailer preset 'scope' must be one of {SUPPORTED_SCOPES}, "
+            f"got '{data['scope']}'."
+        )
     default_order = data.get("default_order")
     if default_order is not None and (
         not isinstance(default_order, int) or isinstance(default_order, bool)
@@ -141,6 +153,15 @@ def parse_detailer_profile(data: dict) -> DetailerProfile:
             "Detailer profile is missing mappings for scopes: "
             + ", ".join(missing)
         )
+    # The mapping keys must be exactly the supported scopes: an unknown key like
+    # "feet" would load successfully but never be reachable (normalize_scopes
+    # drops it), silently hiding a typo or an unfinished scope addition.
+    unknown = sorted(scope for scope in mappings if scope not in SUPPORTED_SCOPES)
+    if unknown:
+        raise ConfigurationError(
+            "Detailer profile has mappings for unsupported scopes: "
+            + ", ".join(unknown)
+        )
     return DetailerProfile(
         version=data["version"],
         profile_id=data["profile_id"],
@@ -162,12 +183,26 @@ def verify_profile_targets(profile: DetailerProfile) -> None:
 
 def load_upscale_preset(preset_id: str) -> UpscalePreset:
     safe_resource_id(preset_id, "upscale preset")
-    return parse_upscale_preset(_read_json("presets", "upscale", f"{preset_id}.json"))
+    preset = parse_upscale_preset(_read_json("presets", "upscale", f"{preset_id}.json"))
+    if preset.preset_id != preset_id:
+        raise ConfigurationError(
+            f"Upscale preset file '{preset_id}.json' declares preset_id "
+            f"'{preset.preset_id}'; the file name and preset_id must match."
+        )
+    return preset
 
 
 def load_detailer_preset(preset_id: str) -> DetailerPreset:
     safe_resource_id(preset_id, "detailer preset")
-    return parse_detailer_preset(_read_json("presets", "detailer", f"{preset_id}.json"))
+    preset = parse_detailer_preset(
+        _read_json("presets", "detailer", f"{preset_id}.json")
+    )
+    if preset.scope != preset_id:
+        raise ConfigurationError(
+            f"Detailer preset file '{preset_id}.json' declares scope "
+            f"'{preset.scope}'; the file name and scope must match."
+        )
+    return preset
 
 
 def load_detailer_profile(profile_id: str = DEFAULT_PROFILE_ID) -> DetailerProfile:
@@ -175,5 +210,10 @@ def load_detailer_profile(profile_id: str = DEFAULT_PROFILE_ID) -> DetailerProfi
     profile = parse_detailer_profile(
         _read_json("presets", "detailer_profiles", f"{profile_id}.json")
     )
+    if profile.profile_id != profile_id:
+        raise ConfigurationError(
+            f"Detailer profile file '{profile_id}.json' declares profile_id "
+            f"'{profile.profile_id}'; the file name and profile_id must match."
+        )
     verify_profile_targets(profile)
     return profile

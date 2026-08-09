@@ -229,3 +229,9 @@
   - **区切り修復の限定**: `apply_forbidden_terms` の `repair_separators` を「実際に禁止語を除去した場合のみ」に限定（第8ラウンド導入の無条件実行が回帰。除去ゼロの `"cinematic... dreamlike"` 等を保持）。
   - **hair プリセット中立化**: `realistic texture`/`fine flyaway hairs` を除去し原スタイル中立の文言へ（illustration/anime に写実強制・未記載毛束を誘発しない）。snapshot は `detailer_hair.txt` のみ更新、scope分離テストは `strand grouping` で判定。
   - **未知フィールド拒否**: `config_json.reject_unknown_keys` を新設し upscale/detailer/profile/policy/template の全 parse に横展開（`"default_oder"` 等のタイプミスが既定値へ黙ってフォールバックするのを防止）。
+- **PR#2 Codex レビュー 第10ラウンド対応（P2×4）※本PRのレビュー最終ラウンド**:
+  - **区切り修復の除去位置限定**: `apply_forbidden_terms` を「禁止語をセンチネル `\x00` へ置換し、空括弧・孤立区切りの修復をセンチネル近傍のみに限定→末尾でセンチネル除去」へ再設計（第8ラウンド導入の全体修復が回帰。`"cinematic... portrait, beautiful eyes"` → `"cinematic... portrait, eyes"` と正当な `...` を保持）。未使用化した `prompt_text.repair_separators`（＋関連シンボル）を削除。
+  - **ロード時ID整合**: `load_upscale_preset`＝`preset_id`、`load_detailer_preset`＝`scope`、`load_detailer_profile`＝`profile_id` をファイル名と一致検証（コピペ由来のID残存を `ConfigurationError` 化）。
+  - **必須文字列の空白拒否**: `_require_str_fields` に `.strip()` 空チェックを追加（空 `upscale_prompt` 等の degenerate 出力を読込時に排除）。
+  - **profile mapping キーの完全一致**: `parse_detailer_profile` で未知 scope キー（`feet` 等）を拒否し、`parse_detailer_preset` で `scope ∈ SUPPORTED_SCOPES` を検証（到達不能な設定の黙認を防止）。
+  - **レビュー打ち切り方針（AGENTS §17.1/§17.2）**: 本PRのCodexレビューは**ラウンド10（上限）で完了**とし、以降の新規指摘は受け付けない。§17.2 のとおりラウンド5以降の新規観点は原則対象外だが、第10ラウンドの4件は contract/AGENTS に根拠があり妥当だったため最終ラウンドとして修正しきった。
