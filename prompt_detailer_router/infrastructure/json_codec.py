@@ -58,8 +58,17 @@ def plan_to_dict(plan: DetailerPlan) -> dict:
 
 
 def encode_plan(plan: DetailerPlan) -> str:
-    """Serialize a plan to a JSON string, preserving all fields deterministically."""
+    """Serialize a plan to a JSON string, preserving all fields deterministically.
 
+    Validates business invariants before serialization so ``encode_plan`` never
+    emits schema-non-compliant JSON, keeping the ``encode`` -> ``decode`` round
+    trip contract intact even for a plan built in memory by another caller.
+    """
+
+    issues = validate_plan(plan)
+    if issues:
+        details = "; ".join(issue.message for issue in issues)
+        raise PlanValidationError(f"Cannot encode invalid plan: {details}")
     return json.dumps(plan_to_dict(plan), ensure_ascii=False, indent=2)
 
 

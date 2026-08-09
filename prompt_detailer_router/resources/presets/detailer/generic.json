@@ -3,5 +3,5 @@
   "scope": "generic",
   "preservation": "Preserve the original object identity, shape, color, material, placement, and visible surface pattern.",
   "local_details": "Refine material texture, clean edges, small surface details, highlights, and contact contours.",
-  "restrictions": "Do not change the object type, scale, design, or surrounding scene."
+  "restrictions": "Do not change the object type, scale, or design."
 }

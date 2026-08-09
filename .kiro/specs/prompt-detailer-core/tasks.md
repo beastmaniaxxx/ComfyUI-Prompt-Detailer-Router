@@ -208,3 +208,8 @@
   - `validate_plan` に空 `subject_id`（空白含む）検証を追加（`empty_subject_id`）。builder は空 subject で往復不能な Plan を返さず fail-fast。
   - preset/policy/template の JSON 読込境界で **object 検証**を追加（`null`/数値/配列を `ConfigurationError` 化）。
   - `upper_body` preset の `restrictions` から `background` を除去（scope 分離、Req 8.2）。upper_body snapshot 再生成。
+- **PR#2 Codex レビュー 第5ラウンド対応（P2×3）**:
+  - `illustration` preset の `preservation` を被写体非依存化（character design/pose を除去、Req 7.2）。
+  - `generic` preset の `restrictions` から `surrounding scene` を除去（scope 分離、Req 8.2）。generic snapshot 再生成。
+  - `encode_plan` に直列化前の `validate_plan` を追加（不正 Plan を `PlanValidationError` 化、`decode_plan` と対称に往復契約を保証、Req 12.3）。
+  - 全 preset を横断監査し scope/subject 混入は解消済み（minimal の `subject` は汎用、他 scope は限定でクリーン）。

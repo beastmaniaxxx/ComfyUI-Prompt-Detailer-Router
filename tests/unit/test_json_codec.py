@@ -109,6 +109,30 @@ def test_decode_malformed_task_id_raises_validation_error() -> None:
         json_codec.decode_plan(json.dumps(data))
 
 
+def test_encode_invalid_plan_raises_validation_error() -> None:
+    # Enabled task with an empty prompt_final is schema-shaped but invariant-
+    # invalid; encode must refuse rather than emit non-round-trippable JSON.
+    bad_task = DetailerTask(
+        task_id="main.face",
+        subject_id="main",
+        scope="face",
+        extracted_features=(),
+        prompt_core="",
+        prompt_final="",
+        order=30,
+        enabled=True,
+        warnings=(),
+    )
+    bad_plan = DetailerPlan(
+        schema_version=SCHEMA_VERSION,
+        requested_scopes=("face",),
+        tasks=(bad_task,),
+        warnings=(),
+    )
+    with pytest.raises(PlanValidationError):
+        json_codec.encode_plan(bad_plan)
+
+
 def test_decode_duplicate_key_raises_plan_decode_error() -> None:
     raw = (
         '{"schema_version": 1, "schema_version": 1, '
