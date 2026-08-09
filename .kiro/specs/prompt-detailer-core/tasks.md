@@ -197,3 +197,9 @@
   - `photographic` preset の `quality_details` を**被写体非依存**に変更（skin/pores/hair/fabric を除去、Req 7.2）。upscale snapshot 再生成。
   - `decode_plan` で JSON **重複キーを拒否**（`object_pairs_hook`→`PlanDecodeError`、後勝ち黙殺を防止、Req 12.4/12.5）。
   - schema 検証エラーメッセージに**フィールドパス**を付与（`tasks/0/order: ...`、user 向け actionable 化）。
+- **PR#2 Codex レビュー 第3ラウンド対応（P2×5）**:
+  - `DetailerTask`/`DetailerPlan` に `__post_init__` を追加し配列を tuple 化（`list` 経由の後変更を防止、真の不変性）。
+  - `policy_loader` で term/version/match の型と対応 match モードを検証 → `ConfigurationError`。
+  - builder template を読込時に `string.Formatter` で解析し `{features}` 以外・不正波括弧を拒否。
+  - **セキュリティ**: `infrastructure/resource_ids.safe_resource_id` を追加し全 loader の id（preset/profile/policy/template）を `^[A-Za-z0-9_-]+$` に制限（`..`/絶対パス等のパストラバーサルを拒否）。
+  - 禁止語マッチを英数字 lookaround 境界に変更し `_` を区切り扱い（`perfect_face` を除去、`imperfect`/`upper_body` は保持）。除去後に孤立アンダースコアを整形。

@@ -31,6 +31,12 @@ class DetailerTask:
     enabled: bool
     warnings: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        # Coerce sequence fields to tuples so a list passed to the public
+        # constructor cannot be mutated after construction (true immutability).
+        object.__setattr__(self, "extracted_features", tuple(self.extracted_features))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+
 
 @dataclass(frozen=True, slots=True)
 class DetailerPlan:
@@ -40,6 +46,11 @@ class DetailerPlan:
     requested_scopes: tuple[str, ...]
     tasks: tuple[DetailerTask, ...]
     warnings: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "requested_scopes", tuple(self.requested_scopes))
+        object.__setattr__(self, "tasks", tuple(self.tasks))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
 
 
 @dataclass(frozen=True, slots=True)

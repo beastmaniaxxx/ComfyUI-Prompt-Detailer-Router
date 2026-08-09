@@ -70,6 +70,42 @@ def test_task_and_plan_are_frozen() -> None:
         plan.schema_version = 2  # type: ignore[misc]
 
 
+def test_sequence_fields_are_coerced_to_tuples_and_isolated() -> None:
+    features = ["dark brown eyes"]
+    warns = ["w"]
+    task = DetailerTask(
+        task_id="main.face",
+        subject_id="main",
+        scope="face",
+        extracted_features=features,
+        prompt_core="",
+        prompt_final="done",
+        order=30,
+        enabled=True,
+        warnings=warns,
+    )
+    assert isinstance(task.extracted_features, tuple)
+    assert isinstance(task.warnings, tuple)
+    # Mutating the original lists must not affect the constructed task.
+    features.append("mutated")
+    warns.append("mutated")
+    assert task.extracted_features == ("dark brown eyes",)
+    assert task.warnings == ("w",)
+
+    scopes = ["face"]
+    tasks = [task]
+    plan = DetailerPlan(
+        schema_version=SCHEMA_VERSION,
+        requested_scopes=scopes,
+        tasks=tasks,
+        warnings=[],
+    )
+    scopes.append("hair")
+    tasks.append(task)
+    assert plan.requested_scopes == ("face",)
+    assert isinstance(plan.tasks, tuple) and len(plan.tasks) == 1
+
+
 def test_task_has_all_required_fields() -> None:
     names = {f.name for f in dataclasses.fields(DetailerTask)}
     assert names == {

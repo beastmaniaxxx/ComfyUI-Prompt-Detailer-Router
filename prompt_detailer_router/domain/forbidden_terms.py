@@ -20,6 +20,18 @@ from prompt_detailer_router.domain.prompt_text import (
 
 CASE_INSENSITIVE_LITERAL = "case_insensitive_literal"
 
+# Underscores are common word separators in generation prompts, so a forbidden
+# term must be matched when delimited by ``_`` (e.g. "perfect_face"). Using
+# alphanumeric look-arounds treats ``_`` as a boundary while still refusing
+# matches inside longer words like "imperfect".
+_ALNUM_LEFT = r"(?<![A-Za-z0-9])"
+_ALNUM_RIGHT = r"(?![A-Za-z0-9])"
+# Strip underscores left dangling at a token boundary after a term is removed
+# (e.g. "_face" -> "face", "very__face" -> "very_face"), without touching
+# intra-token underscores such as "upper_body".
+_ORPHAN_UNDERSCORE_LEFT = re.compile(r"(?<![A-Za-z0-9])_+")
+_ORPHAN_UNDERSCORE_RIGHT = re.compile(r"_+(?![A-Za-z0-9])")
+
 
 @dataclass(frozen=True, slots=True)
 class ForbiddenScanResult:
@@ -53,12 +65,17 @@ def apply_forbidden_terms(
     for term in terms:
         if not term:
             continue
-        pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+        pattern = re.compile(
+            rf"{_ALNUM_LEFT}{re.escape(term)}{_ALNUM_RIGHT}", re.IGNORECASE
+        )
         working, count = pattern.subn("", working)
         if count:
             removed_terms.append(term)
             total += count
 
+    if total:
+        working = _ORPHAN_UNDERSCORE_LEFT.sub("", working)
+        working = _ORPHAN_UNDERSCORE_RIGHT.sub("", working)
     cleaned = normalize_whitespace(repair_separators(normalize_whitespace(working)))
     return ForbiddenScanResult(
         text=cleaned,

@@ -33,3 +33,17 @@ def test_template_missing_placeholder_raises() -> None:
         prompt_template_loader.parse_detailer_builder_template(
             {"version": "1.0", "feature_clause_template": "no placeholder here"}
         )
+
+
+def test_template_with_extra_placeholder_raises() -> None:
+    with pytest.raises(ConfigurationError):
+        prompt_template_loader.parse_detailer_builder_template(
+            {"version": "1.0", "feature_clause_template": "Keep {features} {oops}."}
+        )
+
+
+def test_template_with_malformed_braces_raises() -> None:
+    with pytest.raises(ConfigurationError):
+        prompt_template_loader.parse_detailer_builder_template(
+            {"version": "1.0", "feature_clause_template": "Keep {features"}
+        )

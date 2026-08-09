@@ -74,3 +74,34 @@ def test_no_dangling_punctuation_remains() -> None:
     assert ",," not in result.text
     assert not result.text.startswith(",")
     assert not result.text.strip().endswith(",")
+
+
+def test_underscore_delimited_terms_are_removed() -> None:
+    for text, term in [
+        ("perfect_face", "perfect"),
+        ("beautiful_skin", "beautiful"),
+        ("symmetrical_eyes", "symmetrical"),
+    ]:
+        result = apply_forbidden_terms(text, TERMS, MATCH)
+        assert result.removed_count == 1
+        assert term not in result.text.lower()
+
+
+def test_underscore_removal_leaves_no_orphan_underscore() -> None:
+    result = apply_forbidden_terms("perfect_face", TERMS, MATCH)
+    assert result.text == "face"
+    result2 = apply_forbidden_terms("very_beautiful_face", TERMS, MATCH)
+    assert result2.text == "very_face"
+
+
+def test_longer_word_still_not_matched_with_underscore_boundary() -> None:
+    result = apply_forbidden_terms("an imperfect result", TERMS, MATCH)
+    assert result.removed_count == 0
+    assert "imperfect" in result.text
+
+
+def test_intra_token_underscore_is_preserved() -> None:
+    # A legitimate underscore token must survive even when another term is removed.
+    result = apply_forbidden_terms("upper_body, beautiful detail", TERMS, MATCH)
+    assert "upper_body" in result.text
+    assert "beautiful" not in result.text.lower()

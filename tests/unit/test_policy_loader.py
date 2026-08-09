@@ -26,3 +26,17 @@ def test_missing_policy_raises_configuration_error() -> None:
 def test_policy_missing_key_raises() -> None:
     with pytest.raises(ConfigurationError):
         policy_loader.parse_policy({"version": "1.0", "terms": ["x"]})  # no match
+
+
+def test_policy_non_string_term_raises() -> None:
+    with pytest.raises(ConfigurationError):
+        policy_loader.parse_policy(
+            {"version": "1.0", "terms": [1], "match": "case_insensitive_literal"}
+        )
+
+
+def test_policy_unknown_match_mode_raises() -> None:
+    with pytest.raises(ConfigurationError):
+        policy_loader.parse_policy(
+            {"version": "1.0", "terms": ["x"], "match": "regex"}
+        )

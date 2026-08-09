@@ -11,9 +11,12 @@ from dataclasses import dataclass
 from importlib.resources import files
 
 from prompt_detailer_router.domain.errors import ConfigurationError
+from prompt_detailer_router.domain.forbidden_terms import CASE_INSENSITIVE_LITERAL
+from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 
 DEFAULT_POLICY_ID = "forbidden_terms_v1"
 _POLICY_KEYS = ("version", "terms", "match")
+_SUPPORTED_MATCH_MODES = (CASE_INSENSITIVE_LITERAL,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,16 +32,28 @@ def parse_policy(data: dict) -> ForbiddenTermsPolicy:
         raise ConfigurationError(
             "Forbidden-terms policy is missing required keys: " + ", ".join(missing)
         )
-    if not isinstance(data["terms"], list):
-        raise ConfigurationError("Forbidden-terms policy 'terms' must be a list.")
+    if not isinstance(data["version"], str):
+        raise ConfigurationError("Forbidden-terms policy 'version' must be a string.")
+    if not isinstance(data["terms"], list) or not all(
+        isinstance(term, str) for term in data["terms"]
+    ):
+        raise ConfigurationError(
+            "Forbidden-terms policy 'terms' must be a list of strings."
+        )
+    match = data["match"]
+    if not isinstance(match, str) or match not in _SUPPORTED_MATCH_MODES:
+        raise ConfigurationError(
+            f"Forbidden-terms policy 'match' must be one of {_SUPPORTED_MATCH_MODES}."
+        )
     return ForbiddenTermsPolicy(
         version=data["version"],
         terms=tuple(data["terms"]),
-        match=data["match"],
+        match=match,
     )
 
 
 def load_forbidden_terms_policy(policy_id: str = DEFAULT_POLICY_ID) -> ForbiddenTermsPolicy:
+    safe_resource_id(policy_id, "forbidden-terms policy")
     resource = files("prompt_detailer_router.resources").joinpath(
         "policies", f"{policy_id}.json"
     )

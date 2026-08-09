@@ -15,6 +15,7 @@ from typing import Mapping
 
 from prompt_detailer_router.domain.errors import ConfigurationError
 from prompt_detailer_router.domain.scopes import SUPPORTED_SCOPES
+from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 
 DEFAULT_PROFILE_ID = "default_v1"
 
@@ -156,14 +157,17 @@ def verify_profile_targets(profile: DetailerProfile) -> None:
 
 
 def load_upscale_preset(preset_id: str) -> UpscalePreset:
+    safe_resource_id(preset_id, "upscale preset")
     return parse_upscale_preset(_read_json("presets", "upscale", f"{preset_id}.json"))
 
 
 def load_detailer_preset(preset_id: str) -> DetailerPreset:
+    safe_resource_id(preset_id, "detailer preset")
     return parse_detailer_preset(_read_json("presets", "detailer", f"{preset_id}.json"))
 
 
 def load_detailer_profile(profile_id: str = DEFAULT_PROFILE_ID) -> DetailerProfile:
+    safe_resource_id(profile_id, "detailer profile")
     profile = parse_detailer_profile(
         _read_json("presets", "detailer_profiles", f"{profile_id}.json")
     )
