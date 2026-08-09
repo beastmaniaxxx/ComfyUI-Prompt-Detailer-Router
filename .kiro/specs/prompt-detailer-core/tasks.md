@@ -224,3 +224,8 @@
   - `encode_plan` を Tier1(Schema)→Tier2(`validate_plan`) 順に変更（`subject_id=None` 等の型違反を `PlanValidationError` 化、`.strip()` の生 `AttributeError` を回避）。
   - `repair_separators` を句点隣接・空括弧へ拡張（`". x"`/`"x.. y"`/`"()"` を整形。複数文プロンプトは不変で snapshot 影響なし）。
   - `domain/versions.PROMPT_BUILDER_VERSION` を新設し両 Builder で明示 re-export（design 契約どおり下流 Analyzer の cache key 再現性根拠として import 可能に）。
+- **PR#2 Codex レビュー 第9ラウンド対応（P2×4）**:
+  - **非UTF-8リソース**: `config_json.read_config_json` を新設し `UnicodeDecodeError`（`OSError` 非継承で従来ハンドラ素通り）を `ConfigurationError` へ変換。preset/policy/template loader の読み込みを集約（schema loader はバンドル済み信頼リソースのため対象外）。
+  - **区切り修復の限定**: `apply_forbidden_terms` の `repair_separators` を「実際に禁止語を除去した場合のみ」に限定（第8ラウンド導入の無条件実行が回帰。除去ゼロの `"cinematic... dreamlike"` 等を保持）。
+  - **hair プリセット中立化**: `realistic texture`/`fine flyaway hairs` を除去し原スタイル中立の文言へ（illustration/anime に写実強制・未記載毛束を誘発しない）。snapshot は `detailer_hair.txt` のみ更新、scope分離テストは `strand grouping` で判定。
+  - **未知フィールド拒否**: `config_json.reject_unknown_keys` を新設し upscale/detailer/profile/policy/template の全 parse に横展開（`"default_oder"` 等のタイプミスが既定値へ黙ってフォールバックするのを防止）。

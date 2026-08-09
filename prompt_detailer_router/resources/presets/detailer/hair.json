@@ -2,6 +2,6 @@
   "version": "1.0",
   "scope": "hair",
   "preservation": "Preserve the original hairstyle, length, color, volume, and hairline.",
-  "local_details": "Refine individual hair strands, natural strand grouping, fine flyaway hairs, clean hair contours, and realistic texture.",
+  "local_details": "Refine individual hair strands, natural strand grouping, clean hair contours, and texture consistent with the original rendering style.",
   "restrictions": "Do not change the hairline, length, color, or volume."
 }

@@ -73,10 +73,17 @@ def apply_forbidden_terms(
             removed_terms.append(term)
             total += count
 
+    # Separator/bracket repair only makes sense to clean up artifacts left *by*
+    # removing a term (a dangling "beautiful," or "()"). When nothing was
+    # removed, the input is unrelated to the policy and must be preserved as-is
+    # (e.g. "cinematic... dreamlike" keeps its ellipsis); only whitespace is
+    # normalized. Running repair unconditionally would mutate every finalized
+    # prompt, since both builders apply this scan to their output.
     if total:
         working = _ORPHAN_UNDERSCORE_LEFT.sub("", working)
         working = _ORPHAN_UNDERSCORE_RIGHT.sub("", working)
-    cleaned = normalize_whitespace(repair_separators(normalize_whitespace(working)))
+        working = repair_separators(normalize_whitespace(working))
+    cleaned = normalize_whitespace(working)
     return ForbiddenScanResult(
         text=cleaned,
         removed_count=total,

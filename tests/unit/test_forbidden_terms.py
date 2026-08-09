@@ -128,3 +128,20 @@ def test_multi_sentence_text_is_preserved() -> None:
     text = "Keep the shape. Refine the texture. Do not redesign."
     result = apply_forbidden_terms(text, TERMS, MATCH)
     assert result.text == text
+
+
+def test_no_removal_preserves_adjacent_separators() -> None:
+    # When nothing is removed, separator repair must NOT run: an ellipsis or
+    # repeated punctuation in unrelated input is preserved verbatim (only
+    # whitespace is normalized). Repair is reserved for artifacts left by an
+    # actual removal.
+    result = apply_forbidden_terms("cinematic... dreamlike", TERMS, MATCH)
+    assert result.removed_count == 0
+    assert result.text == "cinematic... dreamlike"
+
+
+def test_no_removal_preserves_empty_brackets() -> None:
+    # A user's literal "()" is not an artifact when no term was removed.
+    result = apply_forbidden_terms("style () tag", TERMS, MATCH)
+    assert result.removed_count == 0
+    assert result.text == "style () tag"

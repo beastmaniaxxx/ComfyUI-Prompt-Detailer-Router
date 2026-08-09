@@ -13,7 +13,10 @@ from dataclasses import dataclass
 from string import Formatter
 
 from prompt_detailer_router.domain.errors import ConfigurationError
-from prompt_detailer_router.infrastructure.config_json import parse_config_json
+from prompt_detailer_router.infrastructure.config_json import (
+    read_config_json,
+    reject_unknown_keys,
+)
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
@@ -77,6 +80,7 @@ def parse_detailer_builder_template(data: dict) -> DetailerBuilderTemplate:
         raise ConfigurationError(
             "Detailer builder template is missing required keys: " + ", ".join(missing)
         )
+    reject_unknown_keys(data, _TEMPLATE_KEYS, "Detailer builder template")
     if not isinstance(data["version"], str) or not isinstance(
         data["feature_clause_template"], str
     ):
@@ -96,12 +100,6 @@ def load_detailer_builder_template(
 ) -> DetailerBuilderTemplate:
     safe_resource_id(template_id, "detailer builder template")
     resource = resource_file("prompts", f"{template_id}.json")
-    try:
-        text = resource.read_text(encoding="utf-8")
-    except (FileNotFoundError, OSError) as exc:
-        raise ConfigurationError(
-            f"Detailer builder template not found: {template_id}"
-        ) from exc
     return parse_detailer_builder_template(
-        parse_config_json(text, f"prompts/{template_id}.json")
+        read_config_json(resource, f"prompts/{template_id}.json")
     )

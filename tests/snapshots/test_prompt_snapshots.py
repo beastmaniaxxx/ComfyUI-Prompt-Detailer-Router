@@ -84,5 +84,5 @@ def test_scope_isolation_between_presets() -> None:
     by_scope = {t.scope: t.prompt_final for t in plan.tasks}
     assert "subtle pores" in by_scope["face"]
     assert "subtle pores" not in by_scope["hair"]
-    assert "flyaway hairs" in by_scope["hair"]
-    assert "flyaway hairs" not in by_scope["face"]
+    assert "strand grouping" in by_scope["hair"]
+    assert "strand grouping" not in by_scope["face"]

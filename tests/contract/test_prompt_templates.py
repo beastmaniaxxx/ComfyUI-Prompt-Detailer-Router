@@ -61,3 +61,27 @@ def test_template_with_conversion_raises() -> None:
         prompt_template_loader.parse_detailer_builder_template(
             {"version": "1.0", "feature_clause_template": "Keep {features!r}."}
         )
+
+
+def test_template_unknown_key_raises() -> None:
+    with pytest.raises(ConfigurationError):
+        prompt_template_loader.parse_detailer_builder_template(
+            {
+                "version": "1.0",
+                "feature_clause_template": "Keep {features}.",
+                "extra": 1,
+            }
+        )
+
+
+class _BadUtf8Resource:
+    def read_text(self, encoding: str = "utf-8") -> str:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+
+def test_non_utf8_template_raises_configuration_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        prompt_template_loader, "resource_file", lambda *parts: _BadUtf8Resource()
+    )
+    with pytest.raises(ConfigurationError):
+        prompt_template_loader.load_detailer_builder_template()

@@ -40,3 +40,28 @@ def test_policy_unknown_match_mode_raises() -> None:
         policy_loader.parse_policy(
             {"version": "1.0", "terms": ["x"], "match": "regex"}
         )
+
+
+def test_policy_unknown_key_raises() -> None:
+    with pytest.raises(ConfigurationError):
+        policy_loader.parse_policy(
+            {
+                "version": "1.0",
+                "terms": ["x"],
+                "match": "case_insensitive_literal",
+                "extra": 1,
+            }
+        )
+
+
+class _BadUtf8Resource:
+    def read_text(self, encoding: str = "utf-8") -> str:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+
+def test_non_utf8_policy_raises_configuration_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        policy_loader, "resource_file", lambda *parts: _BadUtf8Resource()
+    )
+    with pytest.raises(ConfigurationError):
+        policy_loader.load_forbidden_terms_policy()

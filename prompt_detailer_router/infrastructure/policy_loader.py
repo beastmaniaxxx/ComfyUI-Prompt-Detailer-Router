@@ -10,7 +10,10 @@ from dataclasses import dataclass
 
 from prompt_detailer_router.domain.errors import ConfigurationError
 from prompt_detailer_router.domain.forbidden_terms import CASE_INSENSITIVE_LITERAL
-from prompt_detailer_router.infrastructure.config_json import parse_config_json
+from prompt_detailer_router.infrastructure.config_json import (
+    read_config_json,
+    reject_unknown_keys,
+)
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
@@ -32,6 +35,7 @@ def parse_policy(data: dict) -> ForbiddenTermsPolicy:
         raise ConfigurationError(
             "Forbidden-terms policy is missing required keys: " + ", ".join(missing)
         )
+    reject_unknown_keys(data, _POLICY_KEYS, "Forbidden-terms policy")
     if not isinstance(data["version"], str):
         raise ConfigurationError("Forbidden-terms policy 'version' must be a string.")
     if not isinstance(data["terms"], list) or not all(
@@ -55,10 +59,4 @@ def parse_policy(data: dict) -> ForbiddenTermsPolicy:
 def load_forbidden_terms_policy(policy_id: str = DEFAULT_POLICY_ID) -> ForbiddenTermsPolicy:
     safe_resource_id(policy_id, "forbidden-terms policy")
     resource = resource_file("policies", f"{policy_id}.json")
-    try:
-        text = resource.read_text(encoding="utf-8")
-    except (FileNotFoundError, OSError) as exc:
-        raise ConfigurationError(
-            f"Forbidden-terms policy not found: {policy_id}"
-        ) from exc
-    return parse_policy(parse_config_json(text, f"policies/{policy_id}.json"))
+    return parse_policy(read_config_json(resource, f"policies/{policy_id}.json"))

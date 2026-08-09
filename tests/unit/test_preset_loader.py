@@ -137,3 +137,70 @@ def test_profile_mappings_are_immutable() -> None:
     profile = preset_loader.load_detailer_profile()
     with pytest.raises(TypeError):
         profile.mappings["face"] = "hair"  # type: ignore[index]
+
+
+# --- unknown-field rejection (no silent fallback on typos) ---
+
+def test_upscale_preset_unknown_key_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "preset_id": "x",
+        "quality_details": "q",
+        "preservation": "keep",
+        "restrictions": "none",
+        "unexpectd": 1,  # typo
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_upscale_preset(bad)
+
+
+def test_detailer_preset_unknown_key_raises() -> None:
+    # A "default_oder" typo must not silently fall back to the default order.
+    bad = {
+        "version": "1.0",
+        "scope": "face",
+        "preservation": "keep",
+        "local_details": "refine",
+        "restrictions": "none",
+        "default_oder": 10,  # typo of default_order
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_preset(bad)
+
+
+def test_detailer_preset_known_optional_key_is_accepted() -> None:
+    ok = {
+        "version": "1.0",
+        "scope": "face",
+        "preservation": "keep",
+        "local_details": "refine",
+        "restrictions": "none",
+        "default_order": 10,
+    }
+    assert preset_loader.parse_detailer_preset(ok).default_order == 10
+
+
+def test_detailer_profile_unknown_key_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "profile_id": "p",
+        "mappings": {s: s for s in SEVEN},
+        "extra": True,
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_profile(bad)
+
+
+# --- non-UTF-8 resource surfaces as ConfigurationError, not UnicodeDecodeError ---
+
+class _BadUtf8Resource:
+    def read_text(self, encoding: str = "utf-8") -> str:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+
+def test_non_utf8_preset_raises_configuration_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        preset_loader, "resource_file", lambda *parts: _BadUtf8Resource()
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_upscale_preset("photographic")

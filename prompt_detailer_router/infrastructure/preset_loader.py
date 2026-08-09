@@ -13,7 +13,11 @@ from typing import Mapping
 
 from prompt_detailer_router.domain.errors import ConfigurationError
 from prompt_detailer_router.domain.scopes import SUPPORTED_SCOPES
-from prompt_detailer_router.infrastructure.config_json import parse_config_json
+from prompt_detailer_router.infrastructure.config_json import (
+    parse_config_json,
+    read_config_json,
+    reject_unknown_keys,
+)
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 from prompt_detailer_router.infrastructure.resource_paths import resource_file
 
@@ -21,6 +25,7 @@ DEFAULT_PROFILE_ID = "default_v1"
 
 _UPSCALE_KEYS = ("version", "preset_id", "quality_details", "preservation", "restrictions")
 _DETAILER_KEYS = ("version", "scope", "preservation", "local_details", "restrictions")
+_DETAILER_OPTIONAL_KEYS = ("default_order",)
 _PROFILE_KEYS = ("version", "profile_id", "mappings")
 
 
@@ -51,14 +56,7 @@ class DetailerProfile:
 
 
 def _read_json(*parts: str) -> dict:
-    resource = resource_file(*parts)
-    try:
-        text = resource.read_text(encoding="utf-8")
-    except (FileNotFoundError, OSError) as exc:
-        raise ConfigurationError(
-            f"Resource not found: {'/'.join(parts)}"
-        ) from exc
-    return loads_config_json(text, "/".join(parts))
+    return read_config_json(resource_file(*parts), "/".join(parts))
 
 
 def loads_config_json(text: str, what: str) -> dict:
@@ -90,6 +88,7 @@ def _require_str_fields(data: dict, keys: tuple[str, ...], what: str) -> None:
 
 def parse_upscale_preset(data: dict) -> UpscalePreset:
     _require_keys(data, _UPSCALE_KEYS, "Upscale preset")
+    reject_unknown_keys(data, _UPSCALE_KEYS, "Upscale preset")
     _require_str_fields(data, _UPSCALE_KEYS, "Upscale preset")
     return UpscalePreset(
         version=data["version"],
@@ -102,6 +101,9 @@ def parse_upscale_preset(data: dict) -> UpscalePreset:
 
 def parse_detailer_preset(data: dict) -> DetailerPreset:
     _require_keys(data, _DETAILER_KEYS, "Detailer preset")
+    reject_unknown_keys(
+        data, _DETAILER_KEYS + _DETAILER_OPTIONAL_KEYS, "Detailer preset"
+    )
     _require_str_fields(data, _DETAILER_KEYS, "Detailer preset")
     default_order = data.get("default_order")
     if default_order is not None and (
@@ -122,6 +124,7 @@ def parse_detailer_preset(data: dict) -> DetailerPreset:
 
 def parse_detailer_profile(data: dict) -> DetailerProfile:
     _require_keys(data, _PROFILE_KEYS, "Detailer profile")
+    reject_unknown_keys(data, _PROFILE_KEYS, "Detailer profile")
     _require_str_fields(data, ("version", "profile_id"), "Detailer profile")
     mappings = data["mappings"]
     if not isinstance(mappings, dict):
