@@ -168,8 +168,8 @@ def test_separator_orphaned_by_removal_is_still_repaired() -> None:
 
 def test_consecutive_removals_leave_no_residual_separators() -> None:
     # Consecutive forbidden terms leave adjacent removal markers; the repair must
-    # run to a fixpoint so no dangling separators or empty brackets survive
-    # (Issue #3 / Req 9.3).
+    # collapse the whole removal run so no dangling separators or empty brackets
+    # survive (Issue #3 / Req 9.3).
     assert apply_forbidden_terms("beautiful, perfect, face", TERMS, MATCH).text == (
         "face"
     )
@@ -218,3 +218,34 @@ def test_deeply_nested_brackets_are_linear_not_quadratic() -> None:
     assert result.text == ""
     assert result.removed_count == 1
     assert elapsed < 1.0
+
+
+def test_long_separator_run_repaired_regardless_of_length() -> None:
+    # A removal flanked by a long run of separators must be fully repaired in one
+    # pass, not one separator at a time (PR#4 review: repair must not depend on an
+    # iteration cap). Runs of nine-plus separators exercise the previous 8-pass cap.
+    assert apply_forbidden_terms(",,,,,,,,,beautiful", TERMS, MATCH).text == ""
+    assert apply_forbidden_terms("beautiful,,,,,,,,,face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms(
+        "face,,,,,,,,,,,,beautiful,,,,,,,,,,,,hair", TERMS, MATCH
+    ).text == "face, hair"
+
+
+def test_long_separator_run_is_linear_no_backtracking() -> None:
+    # A single removal after a huge separator run must not trigger catastrophic
+    # regex backtracking (PR#4 review). Linear handling finishes near-instantly.
+    import time
+
+    pathological = "," * 100000 + "beautiful"
+    start = time.perf_counter()
+    result = apply_forbidden_terms(pathological, TERMS, MATCH)
+    elapsed = time.perf_counter() - start
+    assert result.text == ""
+    assert elapsed < 1.0
+
+
+def test_bracket_interior_dangling_separator_is_repaired() -> None:
+    # Removing the last/first element inside a bracket must not leave a dangling
+    # separator against the bracket edge.
+    assert apply_forbidden_terms("(a, beautiful)", TERMS, MATCH).text == "(a)"
+    assert apply_forbidden_terms("(beautiful, a)", TERMS, MATCH).text == "(a)"

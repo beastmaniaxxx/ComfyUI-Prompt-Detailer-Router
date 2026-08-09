@@ -39,29 +39,23 @@ _S = re.escape(_SENTINEL)
 _ORPHAN_UNDERSCORE_LEFT = re.compile(r"(?<![A-Za-z0-9])_+")
 _ORPHAN_UNDERSCORE_RIGHT = re.compile(r"_+(?![A-Za-z0-9])")
 
-# A run of sentinels left by consecutive removals, separated only by whitespace
-# and/or the separators that stood between the removed items (e.g. "beautiful,
-# perfect" or "beautiful perfect"). Collapsing the whole run to one marker lets
-# the single-site rules below see a single removal site, and drops the now
-# orphaned separators between the removed items in one global pass.
-_ADJACENT_SENTINELS = re.compile(rf"{_S}(?:[\s,;.]*{_S})+")
-# Repairs applied ONLY around a (single) sentinel, i.e. exactly where a term was
-# removed:
-#   - a separator orphaned on both sides: "a, sentinel, b" -> "a, b"
-#   - a separator left dangling at the string start/end by the removal.
-_SENT_BETWEEN_SEPARATORS = re.compile(rf"[,;.]\s*{_S}\s*([,;.])")
-_SENT_LEADING_SEPARATOR = re.compile(rf"^\s*{_S}\s*[,;.]")
-_SENT_TRAILING_SEPARATOR = re.compile(rf"[,;.]\s*{_S}\s*$")
+# A maximal run of whitespace/separators/sentinels. A run that contains at least
+# one sentinel marks a removal neighbourhood and is collapsed in ONE match by
+# ``_collapse_removal_run``; a run without a sentinel is unrelated punctuation
+# (e.g. an ellipsis) and is left untouched. This single, non-nested quantifier
+# scans each character once — no per-separator passes, no catastrophic
+# backtracking — so an arbitrarily long separator run adjacent to a removal is
+# repaired in a single linear pass regardless of its length.
+_REMOVAL_RUN = re.compile(rf"[\s,;.{_S}]+")
+_SEPARATORS = ",;."
+_OPENERS_STR = "([{"
+_CLOSERS_STR = ")]}"
 
 # Characters that do not, on their own, make a bracket pair "non-empty": a pair
 # enclosing only these (and nested empty pairs) is an artifact of a removal.
 _INSUBSTANTIAL = frozenset(" \t\r\n\f\v,;.") | {_SENTINEL}
 _OPEN_TO_CLOSE = {"(": ")", "[": "]", "{": "}"}
 _CLOSE_TO_OPEN = {close: opener for opener, close in _OPEN_TO_CLOSE.items()}
-# Safety bound on repair passes. Each pass strictly shrinks the string, and
-# realistic inputs converge in one or two passes; the cap guarantees bounded
-# work even on adversarial input rather than an unbounded fixpoint.
-_MAX_REPAIR_PASSES = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,30 +123,57 @@ def _strip_empty_bracket_pairs(text: str) -> str:
     return "".join(out)
 
 
+def _collapse_removal_run(match: "re.Match[str]") -> str:
+    """Collapse one whitespace/separator/sentinel run that spans a removal.
+
+    Runs without a sentinel are unrelated punctuation and returned unchanged. A
+    run that held a removal is replaced by:
+      * nothing, if it sat against a boundary — the string start/end or the
+        inside edge of a bracket — i.e. the removed term was the leading/trailing
+        element, so its separator is dropped;
+      * otherwise the run's last separator plus a space ("a,, X ,, b" -> "a, b"),
+        or a single space when the run had only whitespace ("a X b" -> "a b"),
+        or nothing when it had neither (an underscore-joined removal such as
+        "very_X_face", left for the orphan-underscore step to rejoin).
+    """
+
+    run = match.group(0)
+    if _SENTINEL not in run:
+        return run
+    text = match.string
+    start, end = match.start(), match.end()
+    at_left_boundary = start == 0 or text[start - 1] in _OPENERS_STR
+    at_right_boundary = end == len(text) or text[end] in _CLOSERS_STR
+    if at_left_boundary or at_right_boundary:
+        return ""
+    separators = [ch for ch in run if ch in _SEPARATORS]
+    if separators:
+        return separators[-1] + " "
+    if any(ch.isspace() for ch in run):
+        return " "
+    return ""
+
+
 def _repair_removal_sites(working: str) -> str:
     """Clean up separators/brackets left exactly where terms were removed.
 
-    Operates on a string still carrying sentinels at each removal site, so the
-    repair cannot reach unrelated punctuation elsewhere in the text. The
-    sentinels are dropped at the end, then underscores orphaned by the removal
-    are tidied.
+    Two linear passes, so cost is bounded regardless of separator-run length or
+    bracket nesting depth (no unbounded fixpoint, no per-separator iteration):
 
-    Passes are bounded (``_MAX_REPAIR_PASSES``): empty brackets are stripped in
-    bulk (linear, any nesting depth), runs of sentinels are collapsed globally,
-    then the separator rules run. Realistic inputs converge in one or two passes;
-    the cap keeps even adversarial input (e.g. thousands of nested brackets)
-    bounded instead of an unbounded fixpoint. Every step only shrinks the string.
+    1. Strip bracket pairs that wrapped a removal (``_strip_empty_bracket_pairs``),
+       collapsing any nesting depth in one stack pass.
+    2. Collapse each whitespace/separator/sentinel run that spans a removal
+       (``_collapse_removal_run``) in one regex pass; unrelated punctuation
+       (runs with no sentinel) is preserved.
+
+    Finally, underscores orphaned by the removal are tidied. Repair stays
+    confined to removal sites, so punctuation elsewhere is untouched.
     """
 
-    for _ in range(_MAX_REPAIR_PASSES):
-        previous = working
-        working = _strip_empty_bracket_pairs(working)
-        working = _ADJACENT_SENTINELS.sub(_SENTINEL, working)
-        working = _SENT_BETWEEN_SEPARATORS.sub(rf"{_SENTINEL}\1", working)
-        working = _SENT_LEADING_SEPARATOR.sub(_SENTINEL, working)
-        working = _SENT_TRAILING_SEPARATOR.sub(_SENTINEL, working)
-        if working == previous:
-            break
+    working = _strip_empty_bracket_pairs(working)
+    working = _REMOVAL_RUN.sub(_collapse_removal_run, working)
+    # Every sentinel lives inside a collapsed run above, so none remain; this is
+    # a defensive no-op for any not adjacent to a run.
     working = working.replace(_SENTINEL, "")
     working = _ORPHAN_UNDERSCORE_LEFT.sub("", working)
     working = _ORPHAN_UNDERSCORE_RIGHT.sub("", working)
