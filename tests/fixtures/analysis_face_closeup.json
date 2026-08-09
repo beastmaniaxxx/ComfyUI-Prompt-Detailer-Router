@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "global": {
+    "style": ["close-up portrait"],
+    "lighting": ["soft key light"],
+    "camera": ["shallow depth of field"]
+  },
+  "scoped_features": {
+    "face": ["freckles", "green eyes", "light smile"]
+  },
+  "warnings": []
+}

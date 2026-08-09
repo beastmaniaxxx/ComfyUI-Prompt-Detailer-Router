@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "scope": "body",
+  "preservation": "Preserve the original body pose, proportions, visible anatomy, skin tone, clothing coverage, accessories, and silhouette.",
+  "local_details": "Refine natural body contours, skin texture, clothing contact, fabric folds, and visible edges.",
+  "restrictions": "Do not change age, body type, pose, or garment design, and do not add unseen body details."
+}

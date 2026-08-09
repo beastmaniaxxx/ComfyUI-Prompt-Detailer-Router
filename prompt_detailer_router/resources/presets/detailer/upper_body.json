@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "scope": "upper_body",
+  "preservation": "Preserve the original upper body pose, facial identity, hairstyle, visible skin tone, clothing shape, accessories, and garment fit.",
+  "local_details": "Refine visible skin texture, hairline continuity, collar edges, fabric folds, seams, and upper body contours.",
+  "restrictions": "Do not change the pose, body proportions, or clothing design, and do not reshape the face or change the hairstyle."
+}

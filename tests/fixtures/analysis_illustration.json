@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "global": {
+    "medium": ["illustration"],
+    "style": ["flat color anime style"],
+    "lighting": ["even lighting"]
+  },
+  "scoped_features": {
+    "face": ["round face", "large eyes"],
+    "hair": ["blue twin tails"]
+  },
+  "warnings": []
+}

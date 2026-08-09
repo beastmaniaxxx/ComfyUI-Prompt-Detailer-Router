@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "global": {
+    "style": ["photorealistic"],
+    "lighting": ["soft window light"],
+    "camera": ["shallow depth of field"],
+    "material": ["gray wool fabric"],
+    "environment": ["modern office interior"]
+  },
+  "scoped_features": {
+    "face": ["dark brown eyes", "fair skin"],
+    "hair": ["short black hair"],
+    "hands": ["hands resting on a desk"],
+    "body": ["seated posture"]
+  },
+  "warnings": []
+}

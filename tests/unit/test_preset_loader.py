@@ -1,0 +1,307 @@
+"""Unit tests for preset/profile loading (infrastructure/preset_loader).
+
+Covers Requirements 10.1-10.6: load presets/profiles with required-key
+validation, default profile, and ConfigurationError for missing keys, missing
+mappings, or scope mismatches (no implicit fallback).
+"""
+
+import pytest
+
+from prompt_detailer_router.domain.errors import ConfigurationError
+from prompt_detailer_router.infrastructure import preset_loader
+
+SEVEN = ("face", "hair", "hands", "body", "upper_body", "clothing", "generic")
+
+
+# --- happy path ---
+
+def test_load_upscale_preset() -> None:
+    preset = preset_loader.load_upscale_preset("photographic")
+    assert preset.preset_id == "photographic"
+    assert preset.quality_details and preset.preservation and preset.restrictions
+
+
+@pytest.mark.parametrize("scope", SEVEN)
+def test_load_detailer_preset_scope_matches(scope: str) -> None:
+    preset = preset_loader.load_detailer_preset(scope)
+    assert preset.scope == scope
+    assert preset.local_details and preset.preservation and preset.restrictions
+
+
+def test_load_default_profile_maps_all_scopes() -> None:
+    profile = preset_loader.load_detailer_profile()
+    assert profile.profile_id == "default_v1"
+    assert set(profile.mappings) == set(SEVEN)
+
+
+def test_default_profile_is_used_when_unspecified() -> None:
+    assert preset_loader.load_detailer_profile().profile_id == "default_v1"
+
+
+# --- error paths ---
+
+def test_missing_upscale_preset_raises_configuration_error() -> None:
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_upscale_preset("does_not_exist")
+
+
+def test_missing_detailer_preset_raises_configuration_error() -> None:
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_detailer_preset("does_not_exist")
+
+
+def test_missing_profile_raises_configuration_error() -> None:
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_detailer_profile("does_not_exist")
+
+
+def test_upscale_preset_missing_key_raises() -> None:
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_upscale_preset({"preset_id": "x", "version": "1.0"})
+
+
+def test_detailer_profile_missing_mapping_raises() -> None:
+    incomplete = {
+        "version": "1.0",
+        "profile_id": "p",
+        "mappings": {s: s for s in SEVEN[:-1]},  # missing one scope
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_profile(incomplete)
+
+
+def test_profile_target_scope_mismatch_raises() -> None:
+    # A profile that maps "face" -> the "hair" preset must be rejected.
+    bad = preset_loader.DetailerProfile(
+        version="1.0",
+        profile_id="bad",
+        mappings={**{s: s for s in SEVEN}, "face": "hair"},
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.verify_profile_targets(bad)
+
+
+def test_profile_target_missing_preset_raises() -> None:
+    bad = preset_loader.DetailerProfile(
+        version="1.0",
+        profile_id="bad",
+        mappings={**{s: s for s in SEVEN}, "generic": "nonexistent"},
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.verify_profile_targets(bad)
+
+
+def test_malformed_preset_json_raises_configuration_error() -> None:
+    with pytest.raises(ConfigurationError):
+        preset_loader.loads_config_json("{ not valid json", "presets/detailer/face.json")
+
+
+@pytest.mark.parametrize("text", ["null", "5", '"a string"', "[1, 2]"])
+def test_non_object_preset_json_raises_configuration_error(text: str) -> None:
+    with pytest.raises(ConfigurationError):
+        preset_loader.loads_config_json(text, "presets/detailer/face.json")
+
+
+def test_duplicate_key_preset_json_raises_configuration_error() -> None:
+    text = '{"version": "1.0", "version": "2.0"}'
+    with pytest.raises(ConfigurationError):
+        preset_loader.loads_config_json(text, "presets/detailer/face.json")
+
+
+def test_upscale_preset_wrong_value_type_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "preset_id": "x",
+        "quality_details": [],  # should be a string
+        "preservation": "keep",
+        "restrictions": "none",
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_upscale_preset(bad)
+
+
+def test_detailer_preset_non_int_default_order_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "scope": "face",
+        "preservation": "keep",
+        "local_details": "refine",
+        "restrictions": "none",
+        "default_order": "30",  # should be int or omitted
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_preset(bad)
+
+
+def test_profile_mappings_are_immutable() -> None:
+    profile = preset_loader.load_detailer_profile()
+    with pytest.raises(TypeError):
+        profile.mappings["face"] = "hair"  # type: ignore[index]
+
+
+# --- unknown-field rejection (no silent fallback on typos) ---
+
+def test_upscale_preset_unknown_key_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "preset_id": "x",
+        "quality_details": "q",
+        "preservation": "keep",
+        "restrictions": "none",
+        "unexpectd": 1,  # typo
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_upscale_preset(bad)
+
+
+def test_detailer_preset_unknown_key_raises() -> None:
+    # A "default_oder" typo must not silently fall back to the default order.
+    bad = {
+        "version": "1.0",
+        "scope": "face",
+        "preservation": "keep",
+        "local_details": "refine",
+        "restrictions": "none",
+        "default_oder": 10,  # typo of default_order
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_preset(bad)
+
+
+def test_detailer_preset_known_optional_key_is_accepted() -> None:
+    ok = {
+        "version": "1.0",
+        "scope": "face",
+        "preservation": "keep",
+        "local_details": "refine",
+        "restrictions": "none",
+        "default_order": 10,
+    }
+    assert preset_loader.parse_detailer_preset(ok).default_order == 10
+
+
+def test_detailer_profile_unknown_key_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "profile_id": "p",
+        "mappings": {s: s for s in SEVEN},
+        "extra": True,
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_profile(bad)
+
+
+# --- non-UTF-8 resource surfaces as ConfigurationError, not UnicodeDecodeError ---
+
+class _BadUtf8Resource:
+    def read_text(self, encoding: str = "utf-8") -> str:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+
+def test_non_utf8_preset_raises_configuration_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        preset_loader, "resource_file", lambda *parts: _BadUtf8Resource()
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_upscale_preset("photographic")
+
+
+# --- blank required strings are rejected (no empty/degenerate prompt) ---
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+def test_upscale_preset_blank_required_string_raises(blank: str) -> None:
+    bad = {
+        "version": "1.0",
+        "preset_id": "x",
+        "quality_details": blank,
+        "preservation": "keep",
+        "restrictions": "none",
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_upscale_preset(bad)
+
+
+def test_detailer_preset_blank_required_string_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "scope": "face",
+        "preservation": "   ",
+        "local_details": "refine",
+        "restrictions": "none",
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_preset(bad)
+
+
+# --- detailer preset scope must be a supported scope ---
+
+def test_detailer_preset_unsupported_scope_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "scope": "feet",  # not a supported scope
+        "preservation": "keep",
+        "local_details": "refine",
+        "restrictions": "none",
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_preset(bad)
+
+
+# --- profile mapping keys must be exactly the supported scopes ---
+
+def test_detailer_profile_unknown_scope_mapping_raises() -> None:
+    bad = {
+        "version": "1.0",
+        "profile_id": "p",
+        "mappings": {**{s: s for s in SEVEN}, "feet": "feet"},  # extra scope
+    }
+    with pytest.raises(ConfigurationError):
+        preset_loader.parse_detailer_profile(bad)
+
+
+# --- requested id must match the id declared inside the file ---
+
+def test_upscale_preset_id_mismatch_raises(monkeypatch) -> None:
+    monkeypatch.setattr(
+        preset_loader,
+        "_read_json",
+        lambda *parts: {
+            "version": "1.0",
+            "preset_id": "illustration",  # file declares a different id
+            "quality_details": "q",
+            "preservation": "keep",
+            "restrictions": "none",
+        },
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_upscale_preset("photographic")
+
+
+def test_detailer_preset_scope_mismatch_raises(monkeypatch) -> None:
+    monkeypatch.setattr(
+        preset_loader,
+        "_read_json",
+        lambda *parts: {
+            "version": "1.0",
+            "scope": "hair",  # file declares a different scope than requested
+            "preservation": "keep",
+            "local_details": "refine",
+            "restrictions": "none",
+        },
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_detailer_preset("face")
+
+
+def test_detailer_profile_id_mismatch_raises(monkeypatch) -> None:
+    monkeypatch.setattr(
+        preset_loader,
+        "_read_json",
+        lambda *parts: {
+            "version": "1.0",
+            "profile_id": "other",  # file declares a different id than requested
+            "mappings": {s: s for s in SEVEN},
+        },
+    )
+    with pytest.raises(ConfigurationError):
+        preset_loader.load_detailer_profile("default_v1")

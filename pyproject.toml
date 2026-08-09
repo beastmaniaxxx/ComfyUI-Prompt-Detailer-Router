@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prompt-detailer-router"
+version = "0.0.0"
+description = "ComfyUI custom nodes that route original prompts into upscale and detailer prompts."
+requires-python = ">=3.10"
+# Runtime dependency: JSON Schema Draft 2020-12 validation, confined to the
+# infrastructure layer (see design.md, research.md). The domain layer stays pure.
+dependencies = [
+    "jsonschema>=4.20,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+]
+
+# NOTE: The authoritative packaging manifest (metadata, package data, release
+# config) is owned by the `packaging-and-release` spec. This is the minimal
+# definition needed so the `prompt-detailer-core` test suite is runnable.
+[tool.setuptools.packages.find]
+include = ["prompt_detailer_router*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

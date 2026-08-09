@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "scope": "face",
+  "preservation": "Preserve the original facial identity, expression, gaze, skin tone, distinctive features, and natural facial asymmetry.",
+  "local_details": "Refine natural skin texture, subtle pores, eyelashes, eyebrow hairs, iris texture, and natural lip texture.",
+  "restrictions": "Do not beautify, reshape the face, or change age."
+}
