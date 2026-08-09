@@ -111,9 +111,12 @@ If multi-agent capability is available, for each task (one at a time):
 **d) Handle reviewer verdict**:
 - Parse reviewer verdict only from the exact `## Review Verdict` block and `- VERDICT:` field.
 - If `VERDICT` is missing, ambiguous, or replaced with prose, re-dispatch the reviewer once requesting the exact structured verdict only. Do NOT mark the task complete, commit, or continue to the next task without a parseable `APPROVED | REJECTED` value.
+- Maintain a per-task `REVIEW_ROUND` counter. The first review of a task is round 1. Increment on every subsequent review of the same task, including reviews that follow a debug cycle — a debug cycle never resets the counter. Pass the current round number to both the implementer and the reviewer on every dispatch.
 - **APPROVED** → before marking the task `[x]` or making any success claim, apply `kiro-verify-completion` using fresh evidence from the current code state; then mark task `[x]` in tasks.md and perform selective git commit
-- **REJECTED (round 1-2)** → re-dispatch implementer with review feedback
-- **REJECTED (round 3)** → dispatch debug subagent (see section below)
+- **REJECTED (rounds 1-3)** → re-dispatch implementer with review feedback
+- **REJECTED (rounds 4-9)** → dispatch debug subagent (see section below)
+- **REJECTED (round 10)** → stop the task. Append `_Blocked: レビュー10ラウンド未収束 — <unresolved findings>_` to tasks.md, record the unresolved findings in `## Implementation Notes`, escalate to human review, and move to the next task. Do NOT mark the task `[x]` and do NOT start an 11th round.
+- AGENTS.md §17.1 is the governing limit: at most 10 review rounds per task, counted across plain re-dispatch and debug-driven re-implementation alike.
 
 **e) Commit** (parent-only, selective staging):
 - Stage only the files actually changed for this task, plus tasks.md
@@ -124,7 +127,7 @@ If multi-agent capability is available, for each task (one at a time):
 **f) Record learnings**:
 - If this task revealed cross-cutting insights, append a one-line note to the `## Implementation Notes` section at the bottom of tasks.md
 
-**g) Debug subagent** (triggered by BLOCKED, NEEDS_CONTEXT unresolved, or REJECTED after 2 remediation rounds):
+**g) Debug subagent** (triggered by BLOCKED, NEEDS_CONTEXT unresolved, or REJECTED after 3 remediation rounds):
 
 The debug subagent runs in a **fresh context** — it receives only the error information, not the failed implementation history. This avoids the context pollution that causes infinite retry loops.
 
@@ -145,8 +148,9 @@ The debug subagent runs in a **fresh context** — it receives only the error in
 - If `NEXT_ACTION: BLOCK_TASK` → append `_Blocked: <ROOT_CAUSE>_` to tasks.md, skip to next task
 - If `NEXT_ACTION: RETRY_TASK` → preserve the current worktree; do NOT reset or discard unrelated changes. Spawn a **new** implementer sub-agent with the debug report's `FIX_PLAN`, `NOTES`, and the current `git diff`, and require it to repair the task with explicit edits only
   - If the new implementer succeeds (READY_FOR_REVIEW → reviewer APPROVED) → normal flow
-  - If the new implementer also fails → repeat debug cycle (max 2 debug rounds total). After 2 failed debug rounds → append `_Blocked: debug attempted twice, still failing — <ROOT_CAUSE>_` to tasks.md, skip
-- **Max 2 debug rounds per task**. Each round: fresh debug subagent → fresh implementer. If still failing after 2 rounds, the task is blocked.
+  - If the new implementer also fails → repeat debug cycle (max 3 debug rounds total). After 3 failed debug rounds → append `_Blocked: debug attempted three times, still failing — <ROOT_CAUSE>_` to tasks.md, skip
+- **Max 3 debug rounds per task**. Each round: fresh debug subagent → fresh implementer. If still failing after 3 rounds, the task is blocked.
+- Debug rounds consume `REVIEW_ROUND` like any other round. Whichever limit is reached first — 3 debug rounds or 10 review rounds — blocks the task.
 - Record debug findings in `## Implementation Notes` (this helps subsequent tasks avoid the same issue)
 
 **`(P)` markers**: Tasks marked `(P)` in tasks.md indicate they have no inter-dependencies and could theoretically run in parallel. However, kiro-impl processes them sequentially (one at a time) to avoid git conflicts and simplify review. The `(P)` marker is informational for task planning, not an execution directive.
@@ -202,9 +206,10 @@ For tasks that add or change behavior, enforce RED → GREEN with a feature flag
 - **Strict Handoff Parsing**: Never infer implementer `STATUS` or reviewer `VERDICT` from surrounding prose; only the exact structured fields count
 - **No Destructive Reset**: Never use `git checkout .`, `git reset --hard`, or similar destructive rollback inside the implementation loop
 - **Selective Staging**: NEVER use `git add -A` or `git add .`; always stage explicit file paths
-- **Bounded Review Rounds**: Max 2 implementer re-dispatch rounds per reviewer rejection, then debug
-- **Bounded Debug**: Max 2 debug rounds per task (debug + re-implementation per round); if still failing → BLOCKED
+- **Bounded Review Rounds**: Max 10 review rounds per task in total (AGENTS.md §17.1). Rounds 1-3 re-dispatch the implementer directly; rounds 4-9 go through debug; round 10 blocks the task and escalates to human review
+- **Bounded Debug**: Max 3 debug rounds per task (debug + re-implementation per round); if still failing → BLOCKED
 - **Bounded Remediation**: Cap final-validation remediation at 3 rounds
+- **Ripple Check**: Every implementer and remediation dispatch must return a `## Ripple Report` (AGENTS.md §16.4); a report with an empty `SEARCH_COMMANDS` is invalid and must be rejected
 
 ## Output Description
 
