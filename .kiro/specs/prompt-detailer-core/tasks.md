@@ -175,12 +175,12 @@
 ## Implementation Notes
 
 - **リソースアクセス**: `resources` は package（`__init__.py` あり）だが `schemas/`・`presets/`・`policies/` サブディレクトリは package ではない。`importlib.resources.files("prompt_detailer_router.resources").joinpath("schemas", "detailer_plan_v1.schema.json")` の形で親 package から辿ること（loader タスク 4.1/4.2/4.3 で踏襲）。
-- **profile mapping 値 = detailer preset ファイル名 stem**（scope 名と一致、例 `"face": "face"`）。design の File Structure（`detailer/face.json`）に合わせた確定仕様で、reference §14.3 の例示 `"face_v1"` とは異なる。preset_loader（4.2）は mapping 値を `detailer/<value>.json` として解決し、その `scope` が key と一致することを検証する。
+- **profile mapping 値 = detailer preset ID（＝ファイル名 stem）**。**preset ID と scope は別概念で、一致は要求しない**（Req 10.5 / design preset_loader 契約）。detailer preset はファイル内に ID を持たず、ファイル名が profile mapping から参照される preset ID、`scope` は独立した属性。preset_loader（4.2）は mapping 値を `detailer/<value>.json` として解決し、**その `scope` が mapping key と一致すること**のみを `verify_profile_targets` で関係検証する。したがって `"face": "portrait_face_v1"`（中身の `scope` が `"face"`）は正常入力。現行リソースが `"face": "face"` の形になっているのは既定 preset 群の命名結果であって制約ではない。upscale preset の `preset_id` と profile の `profile_id` はファイル内に ID を持つため、ファイル名との一致を検証する（これらは preset ID の話であり、scope とは無関係）。
 - **開発依存**: `jsonschema>=4.20,<5`（インストール済み 4.26.0）は infra 限定。テストは `python -m pytest -q` で実行。
 - **禁止語マッチ**: `apply_forbidden_terms` は `case_insensitive_literal` を**単語境界（`\b`）付き**で解釈し、`imperfect` から `perfect` を削らない。builder（5.1/5.2）と snapshot（6.3）はこの語単位除去を前提にする。除去後は空白正規化される。
 - **domain 純粋性**: `tests/unit/test_domain_purity.py` が domain 配下の `jsonschema`/`requests`/`comfy` 等 import を静的に禁止。infra loader（4.x）でのみ `jsonschema` を使う。
 - **validate_plan は非 raise**: domain の `validate_plan` は `PlanValidationIssue` を列挙して返すのみ。user 向け `PlanValidationError` への昇格は application（5.3）が担う。
-- **infra loader の入口**（5.1/5.2 で利用）: `preset_loader.load_detailer_profile()`（既定 `default_v1`、mapping 先の存在と scope 一致を検証）／`load_detailer_preset(scope)`／`load_upscale_preset(id)`／`policy_loader.load_forbidden_terms_policy()`／`json_codec.encode_plan`。preset に `default_order` が無ければ `order_defaults` を使う。
+- **infra loader の入口**（5.1/5.2 で利用）: `preset_loader.load_detailer_profile()`（既定 `default_v1`、mapping 先の存在と scope 一致を検証）／`load_detailer_preset(preset_id)`（引数は profile mapping 値＝preset ID。scope と同一である必要はない）／`load_upscale_preset(preset_id)`／`policy_loader.load_forbidden_terms_policy()`／`json_codec.encode_plan`。preset に `default_order` が無ければ `order_defaults` を使う。
 - **json_codec の直列化**: `ensure_ascii=False, indent=2`、キー順は schema 準拠で固定（往復同値・snapshot 安定）。decode は Tier1(schema)→Tier2(`validate_plan`)。
 - **prompt_final の合成テンプレ**（6.3 snapshot が固定）: detailer = `join_prompt([feature_clause, preservation, local_details, restrictions])`（`feature_clause="Keep the described <features>."`、fallback は空）→ 禁止語除去。upscale = `join_prompt([global記述子, quality_details, preservation, restrictions])`→ 禁止語除去。global 記述子は `UPSCALE_GLOBAL_ORDER`（medium,style,lighting,camera,material,texture,environment,subject）順で dedup。
 - **prompt_core は禁止語フィルタ対象外**（Req 9.2 は prompt_final/upscale_prompt のみ）。scope 限定は `features_for_scope(scope)` + scope preset のみ使用で担保。
@@ -235,3 +235,69 @@
   - **必須文字列の空白拒否**: `_require_str_fields` に `.strip()` 空チェックを追加（空 `upscale_prompt` 等の degenerate 出力を読込時に排除）。
   - **profile mapping キーの完全一致**: `parse_detailer_profile` で未知 scope キー（`feet` 等）を拒否し、`parse_detailer_preset` で `scope ∈ SUPPORTED_SCOPES` を検証（到達不能な設定の黙認を防止）。
   - **レビュー打ち切り方針（AGENTS §17.1/§17.2）**: 本PRのCodexレビューは**ラウンド10（上限）で完了**とし、以降の新規指摘は受け付けない。§17.2 のとおりラウンド5以降の新規観点は原則対象外だが、第10ラウンドの4件は contract/AGENTS に根拠があり妥当だったため最終ラウンドとして修正しきった。
+- **Issue #3 対応（ラウンド10後の積み残しP2×2・別PR）**: PR#2 マージ後、ラウンド10到達後に挙がった2件を [#3](https://github.com/beastmaniaxxx/ComfyUI-Prompt-Detailer-Router/issues/3) 経由の別PRで対応（develop ベース `fix/issue-3-forbidden-terms-and-preset-scope`）。
+  - **禁止語連続除去の修復漏れ（回帰）**: `_repair_removal_sites` を単一パスから **fixpoint ループ＋隣接センチネル畳み込み（`_ADJACENT_SENTINELS`）** へ変更。`"beautiful, perfect, face"`→`"face"`、`"face, beautiful, perfect, hair"`→`"face, hair"`、`"(beautiful perfect), face"`→`"face"`。非連続除去・無関係な `...` 保持は不変。
+  - **Detailer preset の scope==ファイル名 過剰制約の撤去**: 第10ラウンドで追加した `load_detailer_preset` の `preset.scope == preset_id` 検査を撤去（Req 10.5／design 契約：preset ID は scope と同一である必要はなく `face -> portrait_face_v1` を許容）。scope 整合は `verify_profile_targets` に委譲。upscale の `preset_id`／profile の `profile_id` 検査は妥当なため維持。
+- **PR#4 Codex レビュー対応（P2×2・Issue #3 の別PR上）**: PR#4 で挙がった2件（いずれも同PRの `forbidden_terms.py` 実装が対象）を修正。
+  - **括弧内セパレータ区切りの連続除去修復（Req 9.3）**: `_ADJACENT_SENTINELS` を空白のみ→`[\s,;.]*`（セパレータ区切りも畳み込み）へ一般化。`"(beautiful, perfect), face"`/`"[beautiful; perfect], face"`/`"{beautiful. perfect}, face"` → すべて `"face"`。
+  - **修復ループの二乗時間回避（AGENTS §9）**: 1反復1組しか除去できない `_SENT_EMPTY_BRACKETS` を廃し、スタックベースの線形一括処理 `_strip_empty_bracket_pairs`（任意ネストを1パス）を新設。無制限 fixpoint を上限付きループ（`_MAX_REPAIR_PASSES`）へ変更。`"("*10000+"beautiful"+")"*10000` が約2.7s→約0.004s。除去位置限定の原則を維持するため、除去は「センチネルを内包した括弧」のみ対象とし利用者の素の `()` は保持。
+- **PR#4 Codex レビュー第2弾対応（P2×1）**: 区切り列が反復上限を超えると修復が途中終了する指摘（`",,,,,,,,,beautiful"`→`","` 等）を修正。区切り修復を反復・正規表現バックトラッキングに依存しない設計へ再構築。
+  - 反復ループ（`_MAX_REPAIR_PASSES`）と `_SENT_*`／`_ADJACENT_SENTINELS` を廃止し、`_REMOVAL_RUN = [\s,;.\x00]+`（単一量指定子＝バックトラッキングなし）＋ `_collapse_removal_run` による**線形1パス**へ置換。センチネルを含む極大ランのみ畳み込み（文字列端・括弧内側端は全削除、中間は区切り1つ＋空白／空白／空）、無関係なランは保持。
+  - 素朴な区切り列正規表現（`[\s,;.]*` ネスト）はカタストロフィックバックトラッキングで `","*100000` が約6.3s になるため不採用。新設計は同入力を約0.004s、括弧ネスト20000を約0.007sで処理。反復回数に依存せず修復完了。
+- **PR#4 Codex レビュー第3弾対応（P2×1・第2弾で混入した回帰）**: 極大ランを常に「区切り1つ＋空白」へ畳み込む実装が、除去語に隣接する利用者の省略記号まで改変していた（`"face... beautiful eyes"`→`"face. eyes"`、`"face, beautiful... hair"`→`"face. hair"`）。除去位置限定（Req 9.3）に反するため修正。
+  - ランを「最初のセンチネルより前（左側）／最後のセンチネルより後（右側）／センチネル間（中間）」に分解し、**中間は常に除去跡**、**生き残る区切りは左右いずれか一方のみ**という規則へ統一。
+  - `_ELLIPSIS = \.{2,}` を**区切りではなく利用者が書いた内容**として扱い、左右いずれかに省略記号があればその側を verbatim で保持（両側にあれば左優先）。`"face... beautiful eyes"`→`"face... eyes"`、`"face, beautiful... hair"`→`"face... hair"`、`"(a... beautiful, b)"`→`"(a... b)"`。
+  - 省略記号が無い場合の畳み込みも `separators[-1]`（ラン全体の最後）から**左側→右側の順で採る単一区切り**へ変更し、中間のみに存在する区切り（`"a beautiful, perfect b"` の `,`）を除去跡として落とす（→`"a b"`）。文字列端・括弧内側端の全削除は不変。
+  - 単一量指定子1パスのままで計算量は不変（ネスト20000で約0.007s、`","*100000` で約0.003s）。テスト追加: `test_ellipsis_adjacent_to_a_removal_is_preserved` / `test_separator_only_between_two_removals_is_dropped`。全295 passed。
+- **PR#4 Codex レビュー第4弾対応（P2×2）**: `_collapse_removal_run` の分岐を**入力空間の決定表として全列挙**し、残る2件を同時に閉じた（AGENTS §22.7）。
+  - **境界に接する省略記号の破棄**: 境界の早期 return が `_ELLIPSIS` 判定より前にあり、`"face... beautiful"`→`"face"`、`"(face... beautiful)"`→`"(face)"` と利用者の `...` まで削除していた。省略記号判定を「両側とも境界」の場合のみの早期 return より後・片側境界の early return より前へ移し、**ランの傍らに生存テキストがある限り省略記号は保持**する規則へ統一（`"face..."` / `"(face...)"` / `"beautiful... face"`→`"... face"`）。両側とも境界（`"beautiful..."`）は生存要素が無いため全削除。
+  - **空括弧除去による隣接トークンの連結**: 括弧が単一センチネルへ畳み込まれた後、区切りも空白も持たないランが空文字を返し `"face(beautiful perfect)eyes"`→`"faceeyes"` と存在しない語を生成していた。**両隣のいずれかが英数字なら空白を残す**分岐を追加（→`"face eyes"`）。アンダースコア結合（`"very_beautiful_face"`→`"very_face"`）は両隣が `_` のため従来どおり連結。
+  - 決定表: (1)両側境界→空 (2)L→Rの順で省略記号→当該省略記号（右境界なら空白なし） (3)片側境界→空 (4)L→Rの順で区切り1つ＋空白 (5)空白のみ→空白 (6)裸センチネルで隣が英数字→空白 (7)それ以外→空。計算量・線形1パスは不変。テスト追加: `test_ellipsis_against_a_boundary_is_preserved` / `test_removal_glued_to_its_neighbours_keeps_them_separate`。全297 passed。
+
+- **PR#4 Codex レビュー第5弾対応 — 仕様への再整合（是正処置）**: 第5弾の `forbidden_terms.py` 指摘（`face(beautiful)-detail`→`face -detail`）を個別修正せず、**実装が承認済み仕様から乖離している**という根本原因へ対処した。
+  - **乖離の実測**: Req 9.3 / design.md（`apply_forbidden_terms` Postconditions・テスト観点）が定めていたのは「除去 + 空白正規化 + `removed_count`」のみ。**区切り修復・空括弧修復・省略記号保持・トークン融合防止・除去位置限定はいずれも requirements / design に存在せず**、PR#2 第8ラウンド以降のレビュー指摘だけで発生した未仕様挙動だった。初版 `ad71722` の 63 行が 253 行へ肥大し、`forbidden_terms.py` だけで計8ラウンド（PR#2 8〜10、PR#4 1〜5）を消費した。
+  - **根本原因**: 複雑性の発生源は PR#2 第10ラウンドで導入した「**修復は除去位置に限定する**」制約1点。この制約がセンチネル埋め込み・左右サイド群の分解・境界判定・省略記号判定・隣接文字種判定を要求し、その組合せが毎ラウンドの新規指摘を生んでいた。さらに AGENTS §22.3 が指摘履歴から書かれ、レビューがそれを根拠に引用する自己強化構造になっていた（§2 の優先順位では AGENTS は design より下位）。
+  - **是正内容**: 未仕様挙動を requirements / design へ昇格させ、同時に「除去位置限定」を撤回した。requirements.md に **Req 9.6（区切り正規化の3規則）／Req 9.7（全体一様適用と受容するトレードオフ）** を追加。design.md の `forbidden_terms` 契約に決定表を追加し、traceability を 9.1–9.7 へ更新。AGENTS §22.3 の「修復は除去位置に限定」を「修復規則は仕様へ決定表として明記してから実装する／適用範囲を仕様で明示的に選ぶ」へ差し替え。
+  - **実装**: 253行 → 199行。センチネル・境界判定・省略記号・隣接文字種の分岐を全廃し、`_strip_empty_bracket_pairs`（スタック1パス）＋ `_collapse_separator_run`（最強区切りへ畳み込み）＋ 端の区切り除去3パスの**状態を持たない3規則**へ置換。除去ゼロの入力は従来どおり不変。
+  - **挙動変更**: `"cinematic... portrait, beautiful eyes"`→`"cinematic. portrait, eyes"`（離れた `...` も正規化＝Req 9.7 の受容トレードオフ）、`"render () beautiful thing"`→`"render thing"`。新規に閉じた欠陥: 文末ピリオドの消失（`"Keep the shape, beautiful."`→`"Keep the shape."` と保持。`,`/`;` の末尾は従来どおり除去）。第5弾の指摘（`"face(beautiful)-detail"`→`"face -detail"`）は Req 9.6.1 の中で解消した: 空括弧が空白を残すのは**両隣が英数字のときに限る**とし、`"face(beautiful)-detail"` / `"face-(beautiful)detail"` はいずれも `"face-detail"`、`"face(beautiful)eyes"` は `"face eyes"` となる。
+  - 計算量は線形のまま（括弧ネスト20000で約0.007s、`","*100000` で約0.007s、`"."*100000`×2 で約0.014s）。旧契約のテスト6件を新契約へ書き換え、全298 passed、snapshot 差分なし。
+
+- **PR#4 Codex レビュー第6弾対応（P2×2 修正 / P2×1 非修正）**: 前ラウンドで確立した Req 9.6 / 9.7 の決定表に照らして 3 件を判定。2 件は表への違反（実装バグ）、1 件は表の文言の明確化で対応した。
+  - **孤立アンダースコアの処理順（Req 9.6.1 / 9.6.3 違反）**: `apply_forbidden_terms` が孤立アンダースコア整形を `_normalize_separators` の**後**に実行していたため、`_` の外側にある空括弧・先頭末尾の区切りが規則 1/3 の対象から漏れていた（`"(beautiful_), face"`→`"(), face"`、`"beautiful_, face"`→`", face"`、`"face, beautiful_"`→`"face,"`）。整形を正規化の**前**へ移動。入力空間を機械的に列挙（禁止語の左右 8×8 × 括弧4種 × 前後トークン4種＝1024件）した実測で、**除去跡が残る入力は 312 件 → 0 件**。
+  - **空括弧判定の空白集合（Req 9.6.1 違反）**: `_INSUBSTANTIAL` が ASCII 空白のみを列挙し、後段の `[\s,;.]+` が Unicode 対応という**同一関数内の定義不一致**により、NBSP・全角スペースを含む括弧が「内容あり」と判定されて残り、直後の `\s` 正規化で中身だけ消えて空括弧が出力に残っていた（`"( beautiful ), face"`→`"(), face"`）。判定を `str.isspace()` へ統一。`re` の `\s` と `str.isspace()` が **Unicode 全域（0x110000 文字）で完全一致**することを実測確認済みで、以後この定義差は発生しない。
+  - **英数字判定の ASCII 限定（非修正・§17.5）**: `str.isalnum()` を `[A-Za-z0-9]` へ変更する提案は**採用しない**。Req 9.6.1 の目的は「2つの生存トークンが1語へ融合することを防ぐ」であり、ASCII 限定にすると `"café(beautiful)bar"`→`"cafébar"`、`"顔(beautiful)詳細"`→`"顔詳細"` と、第5弾で指摘された `"face(beautiful)eyes"`→`"faceeyes"` と同種の融合欠陥を非 ASCII テキストへ作り込む。代わりに requirements.md 9.6.1 へ「ここでの英数字は Unicode の英数字（`str.isalnum()`）」「禁止語マッチの語境界が ASCII 限定なのは `_` を区切り扱いにするための別目的であり一致させない」と明記した。
+  - テスト追加 4 件（`test_underscore_orphaned_by_removal_does_not_hide_outer_artifacts` / `test_no_removal_site_leaves_a_bracket_or_edge_separator_behind`（1024 件の網羅スイープ）/ `test_unicode_whitespace_counts_as_empty_bracket_content` / `test_alphanumeric_neighbour_test_is_unicode_not_ascii`）。全302 passed、`ruff check` All checks passed、snapshot 差分なし。計算量は線形のまま（括弧ネスト20000: 0.008s、`","*100000`: 0.007s、`"_"*100000`: 0.003s、NBSP×100000: 0.010s）。
+
+### Ripple Report（Issue #3 / PR#4 全ラウンド）
+
+§16.4 の必須報告。PR コメントにのみ残していたものを spec 側へ集約する。
+
+```text
+## Ripple Report
+- SEARCH_KEYS: apply_forbidden_terms / ForbiddenScanResult / _collapse_removal_run /
+  _REMOVAL_RUN / _SEPARATORS / _ELLIPSIS / _SENTINEL / _strip_empty_bracket_pairs /
+  repair_separators / normalize_whitespace / load_detailer_preset /
+  verify_profile_targets / DetailerPreset.scope / profile mappings
+- SEARCH_COMMANDS:
+  grep -rn "apply_forbidden_terms\|ForbiddenScanResult" --include=*.py .
+  grep -rn "_collapse_removal_run\|_REMOVAL_RUN\|_SEPARATORS\|_ELLIPSIS\|_SENTINEL\|_strip_empty_bracket_pairs" --include=*.py --include=*.js .
+  grep -rn "repair_separators\|normalize_whitespace" --include=*.py .
+  grep -rn "load_detailer_preset\|verify_profile_targets" --include=*.py --include=*.md .
+  grep -rn "禁止語\|forbidden" .kiro/specs/prompt-detailer-core/{requirements,design,tasks}.md
+- IMPACTED_IN_BOUNDARY:
+  prompt_detailer_router/domain/forbidden_terms.py（除去跡修復の全面再設計）
+  prompt_detailer_router/infrastructure/preset_loader.py:195-204（scope==preset_id 検査の撤去）
+  tests/unit/test_forbidden_terms.py（+9 ケース）
+  tests/unit/test_preset_loader.py（preset ID != scope の許容）
+  .kiro/specs/prompt-detailer-core/tasks.md（Implementation Notes 178/183 の旧 preset ID 契約を更新）
+- IMPACTED_OUT_OF_BOUNDARY:
+  なし。呼び出し元は application/build_detailer_plan.py:75 と
+  application/build_upscale_prompt.py:64 の 2 箇所のみで、いずれも
+  ForbiddenScanResult の I/F 不変につき変更不要。
+- NO_IMPACT_CONFIRMED:
+  resources/schemas/（DETAILER_PLAN schema・Ollama response schema に該当キーなし）
+  resources/presets/・resources/prompts/（禁止語処理はリソースを参照しない）
+  web/js/（scope 解析・候補生成に禁止語処理は関与しない）
+  tests/snapshots/（upscale / scope 別 detailer とも差分なし）
+  __init__.py の NODE_CLASS_MAPPINGS（ノード I/F 変更なし）
+```

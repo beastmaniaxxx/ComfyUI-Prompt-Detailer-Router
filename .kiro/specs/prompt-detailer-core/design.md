@@ -238,7 +238,7 @@ flowchart TD
 | 6.1–6.5 | Plan Builder・欠落fallback・抽出値非採用・無断追加禁止 | `application/build_detailer_plan.py` | `build_detailer_plan` | Plan構築 |
 | 7.1–7.3 | Upscale prompt構築・無断追加禁止・決定性 | `application/build_upscale_prompt.py` | `build_upscale_prompt` | — |
 | 8.1–8.5 | scope別Detailer prompt・混入禁止・再設計禁止・7scope・決定性 | `application/build_detailer_plan.py`, `domain/prompt_text.py` | scope builder | Plan構築 |
-| 9.1–9.5 | 禁止語ポリシー・結合後検査・除去+warning・両builder共有・LLM非委任 | `domain/forbidden_terms.py`, `infrastructure/policy_loader.py` | `apply_forbidden_terms`, `load_policy` | Plan構築 |
+| 9.1–9.7 | 禁止語ポリシー・結合後検査・除去+warning・両builder共有・LLM非委任・除去時の区切り正規化・全体一様適用 | `domain/forbidden_terms.py`, `infrastructure/policy_loader.py` | `apply_forbidden_terms`, `load_policy` | Plan構築 |
 | 10.1–10.7 | preset/profile必須キー・設定エラー・既定profile・既定order | `infrastructure/preset_loader.py`, `domain/order_defaults.py` | `load_upscale_preset`, `load_detailer_profile`, `DEFAULT_ORDER` | — |
 | 11.1–11.4 | DETAILER_PLAN Schema・未知拒否・形状検証・contract | `resources/schemas/detailer_plan_v1.schema.json`, `json_codec`, `schema_loader` | Schema, `decode_plan` | JSON復号 |
 | 12.1–12.5 | JSON codec往復・情報無欠落・未知拒否・不正明示エラー | `infrastructure/json_codec.py` | `encode_plan`, `decode_plan` | JSON復号 |
@@ -407,6 +407,21 @@ def normalize_whitespace(text: str) -> str: ...
 ```
 - Postconditions: `apply_forbidden_terms` は `match="case_insensitive_literal"` で語を除去し、除去後に空白を正規化。`removed_count>0` なら呼び出し側が warning を生成。
 - Invariants: 純粋・決定論的。
+
+##### 区切り正規化の契約（Req 9.6, 9.7）
+
+`removed_count > 0` の場合に限り、空白正規化の前に次を**この順で文字列全体へ 1 回ずつ**適用する。`removed_count == 0` の入力は一切変更しない（空白正規化のみ）。
+
+| # | 規則 | 例 |
+|---|---|---|
+| 1 | 空の括弧ペア（内部が空白・`,;.`・入れ子の空ペアのみ）を除去。両隣が英数字のときのみ空白 1 つを残す | `face()eyes` → `face eyes` / `face()-detail` → `face-detail` |
+| 2 | `[\s,;.]+` の連続を「最も強い区切り 1 つ + 空白 1 つ」へ畳み込む（強さ `.` > `;` > `,`）。区切りを含まない連続は空白 1 つ | `a,, b` → `a, b` / `a, . b` → `a. b` |
+| 3 | 文字列の先頭・括弧の内側の端に接する区切りを除去。文字列末尾は `.` を含む場合のみ保持 | `, face` → `face` / `(a,)` → `(a)` / `Keep the shape, beautiful.` → `Keep the shape.` |
+
+- **除去位置に限定しない**（Req 9.7）。センチネル埋め込み・境界判定・省略記号の保存は行わない。除去が発生した文字列では `cinematic... dreamlike` → `cinematic. dreamlike` のように離れた位置の区切りも正規化されるが、これは v1 の受容するトレードオフ。
+- 計算量は入力長に対して線形。反復 fixpoint を用いず、括弧処理はスタックによる 1 パス、区切り畳み込みは単一量指定子の正規表現 1 パスで完結させる（ネストした量指定子によるカタストロフィックバックトラッキングを作らない）。
+- 禁止語マッチは ASCII 英数字 lookaround 境界（`_` を区切り扱い）。`perfect_face` は除去し `imperfect` は保持する。除去で孤立したアンダースコアはトークン境界でのみ整形し、**この整形を区切り正規化より前に行う**（`"(beautiful_), face"` の `_` を先に落とさないと、その外側の空括弧・先頭区切りが規則 1/3 の対象から漏れる）。
+- 規則 1 の「両隣が英数字」は Unicode 判定（`str.isalnum()`）。空括弧判定の「空白」も `str.isspace()` とし、規則 2/3 の `\s` と同一の集合にする（両者は Unicode 全域で一致する）。ASCII 固定の空白集合を別に持つと、NBSP や全角スペースを含む括弧が本パスで内容ありと判定され、直後の `\s` 正規化で中身だけ消えて空括弧が残る。
 
 ### application
 
@@ -612,7 +627,7 @@ class PDRInternalError(PDRError): ...          # 想定外の内部不整合
 - `normalize_scopes`: `"Face, hair, face,  hands"` → `("face","hair","hands")`；未対応 scope 破棄 + warning；空入力 → `()` + warning（1.x, 2.x）。
 - `make_task_id` / 重複抑止: `main.face` 生成、同一 `subject+scope` 二重生成の 1 件化（3.x）。
 - `validate_plan`: `scope ∉ requested_scopes` / `enabled=true` かつ空 `prompt_final` / 要求 scope に enabled task 無し を各々検出；`enabled=false` の空 `prompt_final` は合格（5.x）。
-- `apply_forbidden_terms`: `beautiful/perfect/symmetrical` を大小無視で除去 + 空白正規化 + `removed_count`（9.2, 9.3）。
+- `apply_forbidden_terms`: `beautiful/perfect/symmetrical` を大小無視で除去 + 空白正規化 + `removed_count`（9.2, 9.3）。除去時のみ区切り正規化（空括弧除去・最強区切りへの畳み込み・端の区切り除去）を文字列全体へ適用し、除去ゼロの入力は不変であること、最悪ケース入力（深い括弧ネスト・長大な区切り列）が線形時間で完了することを検証（9.6, 9.7）。
 - `build_detailer_plan` fallback: 抽出特徴欠落 scope に非空 fallback task + plan warning、`extracted_features=()`（6.2, 6.3）。
 
 ### Contract Tests

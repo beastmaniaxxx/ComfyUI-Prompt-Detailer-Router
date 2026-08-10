@@ -193,16 +193,15 @@ def load_upscale_preset(preset_id: str) -> UpscalePreset:
 
 
 def load_detailer_preset(preset_id: str) -> DetailerPreset:
+    # A detailer preset has no internal id: its file name *is* the preset id that
+    # a profile mapping targets, while ``scope`` is a separate attribute. Per
+    # Requirement 10.5 / the design preset_loader contract, the preset id is not
+    # required to equal the scope, so a profile may map a scope to a differently
+    # named preset (e.g. face -> portrait_face_v1 with scope "face"). The scope's
+    # consistency with the mapping key is enforced relationally by
+    # ``verify_profile_targets``, not by an identity check here.
     safe_resource_id(preset_id, "detailer preset")
-    preset = parse_detailer_preset(
-        _read_json("presets", "detailer", f"{preset_id}.json")
-    )
-    if preset.scope != preset_id:
-        raise ConfigurationError(
-            f"Detailer preset file '{preset_id}.json' declares scope "
-            f"'{preset.scope}'; the file name and scope must match."
-        )
-    return preset
+    return parse_detailer_preset(_read_json("presets", "detailer", f"{preset_id}.json"))
 
 
 def load_detailer_profile(profile_id: str = DEFAULT_PROFILE_ID) -> DetailerProfile:

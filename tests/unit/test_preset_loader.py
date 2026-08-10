@@ -277,20 +277,25 @@ def test_upscale_preset_id_mismatch_raises(monkeypatch) -> None:
         preset_loader.load_upscale_preset("photographic")
 
 
-def test_detailer_preset_scope_mismatch_raises(monkeypatch) -> None:
+def test_detailer_preset_id_may_differ_from_scope(monkeypatch) -> None:
+    # A detailer preset has no internal id: its file name is the preset id a
+    # profile targets, and it is NOT required to equal ``scope`` (Req 10.5 /
+    # design). A profile may map a scope to a differently named preset, so
+    # loading such a preset must succeed; scope/key consistency is enforced by
+    # verify_profile_targets, not by an identity check at load (Issue #3).
     monkeypatch.setattr(
         preset_loader,
         "_read_json",
         lambda *parts: {
             "version": "1.0",
-            "scope": "hair",  # file declares a different scope than requested
+            "scope": "face",  # supported scope, but the file name is not "face"
             "preservation": "keep",
             "local_details": "refine",
             "restrictions": "none",
         },
     )
-    with pytest.raises(ConfigurationError):
-        preset_loader.load_detailer_preset("face")
+    preset = preset_loader.load_detailer_preset("portrait_face_v1")
+    assert preset.scope == "face"
 
 
 def test_detailer_profile_id_mismatch_raises(monkeypatch) -> None:

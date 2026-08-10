@@ -147,20 +147,236 @@ def test_no_removal_preserves_empty_brackets() -> None:
     assert result.text == "style () tag"
 
 
-def test_repair_is_confined_to_the_removal_site() -> None:
-    # A removal elsewhere must not disturb a legitimate ellipsis (or other
-    # punctuation) that is not adjacent to the removed term.
+def test_separator_normalization_applies_to_the_whole_string() -> None:
+    # Req 9.7: once a term is removed, separator normalization is applied
+    # uniformly, not confined to the removal site. The accepted trade-off is that
+    # a separator run elsewhere in the same string is normalized too.
     result = apply_forbidden_terms(
         "cinematic... portrait, beautiful eyes", TERMS, MATCH
     )
     assert result.removed_count == 1
-    assert result.text == "cinematic... portrait, eyes"
+    assert result.text == "cinematic. portrait, eyes"
 
 
 def test_separator_orphaned_by_removal_is_still_repaired() -> None:
-    # The comma orphaned by removing the list item is repaired, while the
-    # unrelated ellipsis earlier in the string is preserved.
+    # The comma orphaned by removing the list item collapses with its neighbour
+    # so no dangling separator survives.
     result = apply_forbidden_terms(
         "cinematic... portrait, beautiful, eyes", TERMS, MATCH
     )
-    assert result.text == "cinematic... portrait, eyes"
+    assert result.text == "cinematic. portrait, eyes"
+
+
+def test_strongest_separator_in_a_run_survives() -> None:
+    # Req 9.6.2: a run collapses to its strongest separator ("." > ";" > ","), so
+    # removing a list item between two sentences keeps the sentence break.
+    assert apply_forbidden_terms(
+        "Keep the described dark eyes, beautiful. Preserve the identity.",
+        TERMS,
+        MATCH,
+    ).text == "Keep the described dark eyes. Preserve the identity."
+    assert apply_forbidden_terms("a; beautiful, b", TERMS, MATCH).text == "a; b"
+
+
+def test_trailing_period_survives_but_trailing_comma_does_not() -> None:
+    # Req 9.6.3: a trailing "." terminates the last sentence of a composed
+    # prompt and is kept; a trailing "," or ";" lost its operand and goes.
+    assert apply_forbidden_terms("Keep the shape, beautiful.", TERMS, MATCH).text == (
+        "Keep the shape."
+    )
+    assert apply_forbidden_terms("photorealistic, beautiful", TERMS, MATCH).text == (
+        "photorealistic"
+    )
+    assert apply_forbidden_terms("photorealistic; beautiful", TERMS, MATCH).text == (
+        "photorealistic"
+    )
+
+
+def test_consecutive_removals_leave_no_residual_separators() -> None:
+    # Consecutive forbidden terms leave adjacent removal markers; the repair must
+    # collapse the whole removal run so no dangling separators or empty brackets
+    # survive (Issue #3 / Req 9.3).
+    assert apply_forbidden_terms("beautiful, perfect, face", TERMS, MATCH).text == (
+        "face"
+    )
+    assert apply_forbidden_terms(
+        "face, beautiful, perfect, hair", TERMS, MATCH
+    ).text == "face, hair"
+    assert apply_forbidden_terms(
+        "(beautiful perfect), face", TERMS, MATCH
+    ).text == "face"
+
+
+def test_bracketed_separator_delimited_consecutive_removals() -> None:
+    # Consecutive terms separated by a separator *inside* a bracket must not leave
+    # residual separators or empty brackets (PR#4 review / Req 9.3).
+    assert apply_forbidden_terms(
+        "(beautiful, perfect), face", TERMS, MATCH
+    ).text == "face"
+    assert apply_forbidden_terms(
+        "[beautiful; perfect], face", TERMS, MATCH
+    ).text == "face"
+    assert apply_forbidden_terms(
+        "{beautiful. perfect}, face", TERMS, MATCH
+    ).text == "face"
+
+
+def test_empty_brackets_go_once_a_removal_happened() -> None:
+    # Req 9.7: normalization is uniform, so an empty pair anywhere in a string
+    # that had a removal is dropped. Without a removal it is preserved — see
+    # test_no_removal_preserves_empty_brackets.
+    assert apply_forbidden_terms(
+        "render () beautiful thing", TERMS, MATCH
+    ).text == "render thing"
+
+
+def test_deeply_nested_brackets_are_linear_not_quadratic() -> None:
+    # A term wrapped in thousands of nested brackets must be repaired in bulk
+    # (linear), not by re-scanning once per nesting level (PR#4 review: avoid a
+    # quadratic fixpoint that stalls ComfyUI on schema-valid but pathological
+    # input). A quadratic implementation takes seconds; linear is well under 1s.
+    import time
+
+    depth = 20000
+    pathological = "(" * depth + "beautiful" + ")" * depth
+    start = time.perf_counter()
+    result = apply_forbidden_terms(pathological, TERMS, MATCH)
+    elapsed = time.perf_counter() - start
+    assert result.text == ""
+    assert result.removed_count == 1
+    assert elapsed < 1.0
+
+
+def test_long_separator_run_repaired_regardless_of_length() -> None:
+    # A removal flanked by a long run of separators must be fully repaired in one
+    # pass, not one separator at a time (PR#4 review: repair must not depend on an
+    # iteration cap). Runs of nine-plus separators exercise the previous 8-pass cap.
+    assert apply_forbidden_terms(",,,,,,,,,beautiful", TERMS, MATCH).text == ""
+    assert apply_forbidden_terms("beautiful,,,,,,,,,face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms(
+        "face,,,,,,,,,,,,beautiful,,,,,,,,,,,,hair", TERMS, MATCH
+    ).text == "face, hair"
+
+
+def test_long_separator_run_is_linear_no_backtracking() -> None:
+    # A single removal after a huge separator run must not trigger catastrophic
+    # regex backtracking (PR#4 review). Linear handling finishes near-instantly.
+    import time
+
+    pathological = "," * 100000 + "beautiful"
+    start = time.perf_counter()
+    result = apply_forbidden_terms(pathological, TERMS, MATCH)
+    elapsed = time.perf_counter() - start
+    assert result.text == ""
+    assert elapsed < 1.0
+
+
+def test_emptied_bracket_keeps_alphanumeric_neighbours_apart() -> None:
+    # Req 9.6.1: a bracket emptied by a removal leaves a space when both
+    # neighbours are alphanumeric, so two surviving tokens do not fuse into a
+    # word that was never written.
+    assert apply_forbidden_terms("face(beautiful)eyes", TERMS, MATCH).text == (
+        "face eyes"
+    )
+    assert apply_forbidden_terms("face(beautiful perfect)eyes", TERMS, MATCH).text == (
+        "face eyes"
+    )
+    assert apply_forbidden_terms("face[beautiful]eyes", TERMS, MATCH).text == (
+        "face eyes"
+    )
+    assert apply_forbidden_terms("x((beautiful))y", TERMS, MATCH).text == "x y"
+    # An underscore-joined removal still rejoins into one token.
+    assert apply_forbidden_terms("very_beautiful_face", TERMS, MATCH).text == (
+        "very_face"
+    )
+
+
+def test_underscore_orphaned_by_removal_does_not_hide_outer_artifacts() -> None:
+    # An underscore left behind by the removal is part of the wreckage, so it is
+    # cleared before separator normalization runs; otherwise it masks the bracket
+    # or separator outside it and Req 9.6.1/9.6.3 are left unsatisfied
+    # (PR#4 review: "(beautiful_), face" used to end up as "(), face").
+    assert apply_forbidden_terms("beautiful_, face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("_beautiful, face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("(beautiful_), face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("[_beautiful_], face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("face(_beautiful_)eyes", TERMS, MATCH).text == (
+        "face eyes"
+    )
+    assert apply_forbidden_terms("face, beautiful_", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("face_beautiful_eyes", TERMS, MATCH).text == (
+        "face_eyes"
+    )
+
+
+def test_no_removal_site_leaves_a_bracket_or_edge_separator_behind() -> None:
+    # Sweep the shapes a removal can leave behind — underscores, separators and
+    # brackets on either side — and assert none of them survives into the output
+    # (Req 9.6.1/9.6.3). A single missed ordering leaves hundreds of these.
+    import itertools
+
+    sides = ["", "_", ",", ".", " ", "_,", ", ", " _"]
+    wraps = [("", ""), ("(", ")"), ("[", "]"), ("{", "}")]
+    for left, right, (open_, close) in itertools.product(sides, sides, wraps):
+        for prefix, suffix in [("face", "eyes"), ("", "eyes"), ("face", ""), ("", "")]:
+            text = f"{prefix}{open_}{left}beautiful{right}{close}{suffix}"
+            result = apply_forbidden_terms(text, TERMS, MATCH)
+            if not result.removed_count:
+                continue
+            assert "()" not in result.text, text
+            assert "[]" not in result.text, text
+            assert "{}" not in result.text, text
+            assert not result.text.startswith((",", ";", ".")), text
+            assert not result.text.endswith((",", ";")), text
+            assert "  " not in result.text, text
+
+
+def test_unicode_whitespace_counts_as_empty_bracket_content() -> None:
+    # The bracket scan and the ``\s`` of the separator patterns must share one
+    # whitespace definition. With an ASCII-only set, a NBSP or ideographic space
+    # made the pair look substantial here and was erased a pass later, stranding
+    # the empty pair (PR#4 review / Req 9.6.1).
+    for space in ["\u00a0", "\u3000", "\u2009", "\u2028"]:
+        text = f"({space}beautiful{space}), face"
+        assert apply_forbidden_terms(text, TERMS, MATCH).text == "face", repr(text)
+
+
+def test_alphanumeric_neighbour_test_is_unicode_not_ascii() -> None:
+    # Req 9.6.1 keeps a space only to stop two surviving tokens fusing into a
+    # word that was never written. The test is Unicode-wide: restricting it to
+    # [A-Za-z0-9] would fuse accented and CJK neighbours instead.
+    assert apply_forbidden_terms("café(beautiful)bar", TERMS, MATCH).text == "café bar"
+    assert apply_forbidden_terms("顔(beautiful)詳細", TERMS, MATCH).text == "顔 詳細"
+    # A non-alphanumeric neighbour still means there is no fusion to prevent.
+    assert apply_forbidden_terms("顔(beautiful)・詳細", TERMS, MATCH).text == "顔・詳細"
+
+
+def test_emptied_bracket_next_to_punctuation_leaves_no_space() -> None:
+    # Req 9.6.1: with a non-alphanumeric neighbour there is no fusion to prevent,
+    # so the pair leaves nothing and the author's punctuation keeps its spacing
+    # (PR#4 review: "face(beautiful)-detail" must not become "face -detail").
+    assert apply_forbidden_terms("face(beautiful)-detail", TERMS, MATCH).text == (
+        "face-detail"
+    )
+    assert apply_forbidden_terms("face-(beautiful)detail", TERMS, MATCH).text == (
+        "face-detail"
+    )
+
+
+def test_consecutive_removals_collapse_to_one_separator() -> None:
+    # Several terms removed in a row leave one separator run, which collapses to
+    # a single strongest separator rather than a pile of dangling punctuation.
+    assert apply_forbidden_terms("a beautiful, perfect b", TERMS, MATCH).text == "a, b"
+    assert apply_forbidden_terms(
+        "a, beautiful... perfect, b", TERMS, MATCH
+    ).text == "a. b"
+    assert ",," not in apply_forbidden_terms(
+        "a, beautiful, perfect, symmetrical, b", TERMS, MATCH
+    ).text
+
+
+def test_bracket_interior_dangling_separator_is_repaired() -> None:
+    # Removing the last/first element inside a bracket must not leave a dangling
+    # separator against the bracket edge.
+    assert apply_forbidden_terms("(a, beautiful)", TERMS, MATCH).text == "(a)"
+    assert apply_forbidden_terms("(beautiful, a)", TERMS, MATCH).text == "(a)"
