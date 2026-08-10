@@ -1,12 +1,12 @@
 {
   "feature_name": "ollama-prompt-analyzer",
   "created_at": "2026-08-10T04:15:24Z",
-  "updated_at": "2026-08-10T04:15:24Z",
+  "updated_at": "2026-08-11T00:00:00Z",
   "language": "ja",
-  "phase": "initialized",
+  "phase": "requirements-generated",
   "approvals": {
     "requirements": {
-      "generated": false,
+      "generated": true,
       "approved": false
     },
     "design": {
