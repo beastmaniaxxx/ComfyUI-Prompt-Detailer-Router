@@ -244,6 +244,40 @@ def test_long_separator_run_is_linear_no_backtracking() -> None:
     assert elapsed < 1.0
 
 
+def test_ellipsis_adjacent_to_a_removal_is_preserved() -> None:
+    # An ellipsis the user wrote directly against the removed term is authored
+    # punctuation, not a removal artifact: it belongs to the surviving neighbour
+    # and must survive verbatim instead of being collapsed to a single period
+    # (PR#4 review / Req 9.3, repair confined to the removal site).
+    assert apply_forbidden_terms("face... beautiful eyes", TERMS, MATCH).text == (
+        "face... eyes"
+    )
+    assert apply_forbidden_terms("face, beautiful... hair", TERMS, MATCH).text == (
+        "face... hair"
+    )
+    assert apply_forbidden_terms("face... beautiful, eyes", TERMS, MATCH).text == (
+        "face... eyes"
+    )
+    # Both sides carry one: exactly one delimiter survives, the left neighbour's.
+    assert apply_forbidden_terms("face... beautiful... hair", TERMS, MATCH).text == (
+        "face... hair"
+    )
+    # Inside brackets the same confinement applies.
+    assert apply_forbidden_terms("(a... beautiful, b)", TERMS, MATCH).text == (
+        "(a... b)"
+    )
+
+
+def test_separator_only_between_two_removals_is_dropped() -> None:
+    # Punctuation that sat between two removed terms delimited nothing that
+    # survives, so it is an artifact — only the run's outer sides may contribute
+    # the single surviving delimiter.
+    assert apply_forbidden_terms("a beautiful, perfect b", TERMS, MATCH).text == "a b"
+    assert apply_forbidden_terms(
+        "a, beautiful... perfect, b", TERMS, MATCH
+    ).text == "a, b"
+
+
 def test_bracket_interior_dangling_separator_is_repaired() -> None:
     # Removing the last/first element inside a bracket must not leave a dangling
     # separator against the bracket edge.

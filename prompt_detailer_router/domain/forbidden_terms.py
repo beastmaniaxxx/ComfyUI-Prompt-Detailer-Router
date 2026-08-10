@@ -5,8 +5,9 @@ forbidden-terms policy to a finalized string. Matching is
 ``case_insensitive_literal`` with word boundaries so a banned word is removed as
 a whole word without mutilating longer words (e.g. "perfect" is not stripped
 from "imperfect"). Separator/bracket repair after removal is confined to the
-exact spots a term was removed, so punctuation that was already in the input
-away from any removal (e.g. an ellipsis in "cinematic... portrait") is preserved.
+exact spots a term was removed, so punctuation that was already in the input is
+preserved — both away from any removal (the ellipsis in "cinematic... portrait")
+and directly against one ("face... beautiful eyes" -> "face... eyes").
 """
 
 from __future__ import annotations
@@ -48,6 +49,12 @@ _ORPHAN_UNDERSCORE_RIGHT = re.compile(r"_+(?![A-Za-z0-9])")
 # repaired in a single linear pass regardless of its length.
 _REMOVAL_RUN = re.compile(rf"[\s,;.{_S}]+")
 _SEPARATORS = ",;."
+
+# Two or more consecutive dots are an ellipsis: authored content, never a
+# delimiter this module invented. When one sits on a side of a removal run it is
+# kept verbatim instead of being collapsed into a single separator, so
+# "face... beautiful eyes" -> "face... eyes" rather than "face. eyes".
+_ELLIPSIS = re.compile(r"\.{2,}")
 _OPENERS_STR = "([{"
 _CLOSERS_STR = ")]}"
 
@@ -130,10 +137,17 @@ def _collapse_removal_run(match: "re.Match[str]") -> str:
     run that held a removal is replaced by:
       * nothing, if it sat against a boundary — the string start/end or the
         inside edge of a bracket — i.e. the removed term was the leading/trailing
-        element, so its separator is dropped;
-      * otherwise the run's last separator plus a space ("a,, X ,, b" -> "a, b"),
-        or a single space when the run had only whitespace ("a X b" -> "a b"),
-        or nothing when it had neither (an underscore-joined removal such as
+        element, so the single delimiter group in play lost its operand;
+      * otherwise one delimiter survives to join the two neighbours that the
+        removed term stood between. When exactly one side of the run holds an
+        ellipsis, that side is authored punctuation belonging to its neighbour
+        and is kept verbatim ("face... X eyes" -> "face... eyes",
+        "face, X... hair" -> "face... hair"); when both sides hold one, the left
+        side wins;
+      * failing that, one separator from a side that has one — the left side
+        first — plus a space ("a,, X ,, b" -> "a, b"), or a single space when
+        neither side had a separator ("a X b" -> "a b"), or nothing when the run
+        had no whitespace either (an underscore-joined removal such as
         "very_X_face", left for the orphan-underscore step to rejoin).
     """
 
@@ -146,9 +160,19 @@ def _collapse_removal_run(match: "re.Match[str]") -> str:
     at_right_boundary = end == len(text) or text[end] in _CLOSERS_STR
     if at_left_boundary or at_right_boundary:
         return ""
-    separators = [ch for ch in run if ch in _SEPARATORS]
+    # Only the sides of the run touch surviving text; anything between the first
+    # and last sentinel separated removed terms from each other and is dropped.
+    left = run[: run.index(_SENTINEL)]
+    right = run[run.rindex(_SENTINEL) + 1 :]
+    if _ELLIPSIS.search(left):
+        return left
+    if _ELLIPSIS.search(right):
+        return right
+    separators = [ch for ch in left if ch in _SEPARATORS] or [
+        ch for ch in right if ch in _SEPARATORS
+    ]
     if separators:
-        return separators[-1] + " "
+        return separators[0] + " "
     if any(ch.isspace() for ch in run):
         return " "
     return ""
