@@ -113,10 +113,25 @@ If multi-agent capability is available, for each task (one at a time):
 - If `VERDICT` is missing, ambiguous, or replaced with prose, re-dispatch the reviewer once requesting the exact structured verdict only. Do NOT mark the task complete, commit, or continue to the next task without a parseable `APPROVED | REJECTED` value.
 - Maintain a per-task `REVIEW_ROUND` counter. The first review of a task is round 1. Increment on every subsequent review of the same task, including reviews that follow a debug cycle — a debug cycle never resets the counter. Pass the current round number to both the implementer and the reviewer on every dispatch.
 - **APPROVED** → before marking the task `[x]` or making any success claim, apply `kiro-verify-completion` using fresh evidence from the current code state; then mark task `[x]` in tasks.md and perform selective git commit
+- **REJECTED** → first apply the **spec-basis gate** below. Only findings that clear the gate are dispatched for code changes.
 - **REJECTED (rounds 1-3)** → re-dispatch implementer with review feedback
 - **REJECTED (rounds 4-9)** → dispatch debug subagent (see section below)
 - **REJECTED (round 10)** → stop the task. Append `_Blocked: レビュー10ラウンド未収束 — <unresolved findings>_` to tasks.md, record the unresolved findings in `## Implementation Notes`, escalate to human review, and move to the next task. Do NOT mark the task `[x]` and do NOT start an 11th round.
 - AGENTS.md §17.1 is the governing limit: at most 10 review rounds per task, counted across plain re-dispatch and debug-driven re-implementation alike.
+
+**d-1) Spec-basis gate** (AGENTS.md §17.3.1 / §21.2 — run before every re-dispatch, at any round):
+
+Before sending a finding to an implementer or a debug subagent, open the `requirements.md` / `design.md` section the finding cites and confirm **the cited text actually states what the finding claims**. A section number alone is not a basis. Classify each finding:
+
+- **Basis exists** → dispatch for a code change as usual.
+- **No basis, behavior is needed** → do NOT dispatch a code change. Update `requirements.md` / `design.md` first, as a decision table covering every input class and its output, with the chosen scope of application and the rejected alternative recorded. Spec changes need approval per AGENTS.md §2 — do not let implementation run ahead of the approved spec. Dispatch the implementer only once the spec is settled.
+- **No basis, behavior is unnecessary or harmful** → do NOT dispatch. Record the rejection with its evidence (AGENTS.md §21.2 branch B), clarify the spec wording if the finding exposed an undefined criterion, and treat the finding as closed. Per §17.5 a finding with no spec basis cannot drive a `REJECTED` verdict.
+
+Watch for circular basis: a finding that cites AGENTS.md text which was itself written from earlier findings on the same code is not grounded. AGENTS.md ranks below `requirements.md` / `design.md` (§2).
+
+Round accounting is unchanged — a round spent settling the spec still counts toward the §17.1 limit of 10. Record the classification of every finding in the round's `## Remediation Report` under `SPEC_BASIS`.
+
+Rationale: without this gate, a finding about undefined behavior produces a code change, which produces the next finding about the same undefined behavior. The round cap only bounds the damage. In PR#4, `domain/forbidden_terms.py` consumed 8 rounds this way; after the behavior was written into the spec as a decision table, the following findings resolved in one round.
 
 **e) Commit** (parent-only, selective staging):
 - Stage only the files actually changed for this task, plus tasks.md
