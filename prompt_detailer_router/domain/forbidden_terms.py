@@ -133,22 +133,31 @@ def _strip_empty_bracket_pairs(text: str) -> str:
 def _collapse_removal_run(match: "re.Match[str]") -> str:
     """Collapse one whitespace/separator/sentinel run that spans a removal.
 
-    Runs without a sentinel are unrelated punctuation and returned unchanged. A
-    run that held a removal is replaced by:
-      * nothing, if it sat against a boundary — the string start/end or the
-        inside edge of a bracket — i.e. the removed term was the leading/trailing
-        element, so the single delimiter group in play lost its operand;
-      * otherwise one delimiter survives to join the two neighbours that the
-        removed term stood between. When exactly one side of the run holds an
-        ellipsis, that side is authored punctuation belonging to its neighbour
-        and is kept verbatim ("face... X eyes" -> "face... eyes",
-        "face, X... hair" -> "face... hair"); when both sides hold one, the left
-        side wins;
-      * failing that, one separator from a side that has one — the left side
-        first — plus a space ("a,, X ,, b" -> "a, b"), or a single space when
-        neither side had a separator ("a X b" -> "a b"), or nothing when the run
-        had no whitespace either (an underscore-joined removal such as
-        "very_X_face", left for the orphan-underscore step to rejoin).
+    Runs without a sentinel are unrelated punctuation and returned unchanged.
+    For a run that held a removal, only its two sides touch surviving text —
+    everything between the first and last sentinel separated removed terms from
+    each other and is always dropped. With ``L``/``R`` the side groups and
+    ``bl``/``br`` telling whether the run abuts a boundary (the string start/end
+    or the inside edge of a bracket), the replacement is, in order:
+
+    1. ``bl and br`` -> nothing: no text survives beside the run.
+    2. an ellipsis in ``L``, else in ``R`` -> that ellipsis, plus a space unless
+       the run ends at a boundary. An ellipsis is authored content, not a
+       delimiter this module invented, so it survives wherever surviving text
+       sits beside the run ("face... X eyes" -> "face... eyes", "face, X... hair"
+       -> "face... hair", "face... X" -> "face...", "(face... X)" -> "(face...)").
+    3. ``bl or br`` -> nothing: the removed term was the leading/trailing element,
+       so the one delimiter group in play lost its operand.
+    4. otherwise one delimiter survives to join the two neighbours the removed
+       term stood between: the first separator of ``L``, else of ``R``, plus a
+       space ("a,, X ,, b" -> "a, b").
+    5. no separator but some whitespace -> a single space ("a X b" -> "a b").
+    6. a bare sentinel (the term was glued to its neighbours, e.g. wrapped in
+       brackets) -> a space when either neighbour is alphanumeric, so two
+       surviving tokens do not fuse into a word that was never written
+       ("face(X)eyes" -> "face eyes").
+    7. otherwise nothing: an underscore-joined removal such as "very_X_face",
+       left for the orphan-underscore step to rejoin.
     """
 
     run = match.group(0)
@@ -158,22 +167,23 @@ def _collapse_removal_run(match: "re.Match[str]") -> str:
     start, end = match.start(), match.end()
     at_left_boundary = start == 0 or text[start - 1] in _OPENERS_STR
     at_right_boundary = end == len(text) or text[end] in _CLOSERS_STR
-    if at_left_boundary or at_right_boundary:
+    if at_left_boundary and at_right_boundary:
         return ""
-    # Only the sides of the run touch surviving text; anything between the first
-    # and last sentinel separated removed terms from each other and is dropped.
     left = run[: run.index(_SENTINEL)]
     right = run[run.rindex(_SENTINEL) + 1 :]
-    if _ELLIPSIS.search(left):
-        return left
-    if _ELLIPSIS.search(right):
-        return right
+    ellipsis = _ELLIPSIS.search(left) or _ELLIPSIS.search(right)
+    if ellipsis is not None:
+        return ellipsis.group(0) if at_right_boundary else ellipsis.group(0) + " "
+    if at_left_boundary or at_right_boundary:
+        return ""
     separators = [ch for ch in left if ch in _SEPARATORS] or [
         ch for ch in right if ch in _SEPARATORS
     ]
     if separators:
         return separators[0] + " "
     if any(ch.isspace() for ch in run):
+        return " "
+    if text[start - 1].isalnum() or text[end].isalnum():
         return " "
     return ""
 

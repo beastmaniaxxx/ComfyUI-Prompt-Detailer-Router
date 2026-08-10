@@ -249,3 +249,7 @@
   - `_ELLIPSIS = \.{2,}` を**区切りではなく利用者が書いた内容**として扱い、左右いずれかに省略記号があればその側を verbatim で保持（両側にあれば左優先）。`"face... beautiful eyes"`→`"face... eyes"`、`"face, beautiful... hair"`→`"face... hair"`、`"(a... beautiful, b)"`→`"(a... b)"`。
   - 省略記号が無い場合の畳み込みも `separators[-1]`（ラン全体の最後）から**左側→右側の順で採る単一区切り**へ変更し、中間のみに存在する区切り（`"a beautiful, perfect b"` の `,`）を除去跡として落とす（→`"a b"`）。文字列端・括弧内側端の全削除は不変。
   - 単一量指定子1パスのままで計算量は不変（ネスト20000で約0.007s、`","*100000` で約0.003s）。テスト追加: `test_ellipsis_adjacent_to_a_removal_is_preserved` / `test_separator_only_between_two_removals_is_dropped`。全295 passed。
+- **PR#4 Codex レビュー第4弾対応（P2×2）**: `_collapse_removal_run` の分岐を**入力空間の決定表として全列挙**し、残る2件を同時に閉じた（AGENTS §22.7）。
+  - **境界に接する省略記号の破棄**: 境界の早期 return が `_ELLIPSIS` 判定より前にあり、`"face... beautiful"`→`"face"`、`"(face... beautiful)"`→`"(face)"` と利用者の `...` まで削除していた。省略記号判定を「両側とも境界」の場合のみの早期 return より後・片側境界の early return より前へ移し、**ランの傍らに生存テキストがある限り省略記号は保持**する規則へ統一（`"face..."` / `"(face...)"` / `"beautiful... face"`→`"... face"`）。両側とも境界（`"beautiful..."`）は生存要素が無いため全削除。
+  - **空括弧除去による隣接トークンの連結**: 括弧が単一センチネルへ畳み込まれた後、区切りも空白も持たないランが空文字を返し `"face(beautiful perfect)eyes"`→`"faceeyes"` と存在しない語を生成していた。**両隣のいずれかが英数字なら空白を残す**分岐を追加（→`"face eyes"`）。アンダースコア結合（`"very_beautiful_face"`→`"very_face"`）は両隣が `_` のため従来どおり連結。
+  - 決定表: (1)両側境界→空 (2)L→Rの順で省略記号→当該省略記号（右境界なら空白なし） (3)片側境界→空 (4)L→Rの順で区切り1つ＋空白 (5)空白のみ→空白 (6)裸センチネルで隣が英数字→空白 (7)それ以外→空。計算量・線形1パスは不変。テスト追加: `test_ellipsis_against_a_boundary_is_preserved` / `test_removal_glued_to_its_neighbours_keeps_them_separate`。全297 passed。

@@ -268,6 +268,42 @@ def test_ellipsis_adjacent_to_a_removal_is_preserved() -> None:
     )
 
 
+def test_ellipsis_against_a_boundary_is_preserved() -> None:
+    # An ellipsis is authored content, so a removal at the string end or against
+    # a bracket edge must not take it along (PR#4 review / Req 9.3). It survives
+    # wherever surviving text sits beside the removal run.
+    assert apply_forbidden_terms("face... beautiful", TERMS, MATCH).text == "face..."
+    assert apply_forbidden_terms("(face... beautiful)", TERMS, MATCH).text == (
+        "(face...)"
+    )
+    assert apply_forbidden_terms("face beautiful...", TERMS, MATCH).text == "face..."
+    assert apply_forbidden_terms("(a, beautiful...)", TERMS, MATCH).text == "(a...)"
+    # Same at the leading edge: the surviving neighbour keeps the ellipsis.
+    assert apply_forbidden_terms("beautiful... face", TERMS, MATCH).text == "... face"
+    # With nothing surviving beside the run there is no ellipsis to attach.
+    assert apply_forbidden_terms("beautiful...", TERMS, MATCH).text == ""
+    assert apply_forbidden_terms("(beautiful...)", TERMS, MATCH).text == ""
+
+
+def test_removal_glued_to_its_neighbours_keeps_them_separate() -> None:
+    # A term wrapped in brackets with no surrounding space collapses to a bare
+    # removal marker; dropping it outright would fuse two surviving tokens into a
+    # word that was never written (PR#4 review / Req 9.3).
+    assert apply_forbidden_terms("face(beautiful)eyes", TERMS, MATCH).text == (
+        "face eyes"
+    )
+    assert apply_forbidden_terms("face(beautiful perfect)eyes", TERMS, MATCH).text == (
+        "face eyes"
+    )
+    assert apply_forbidden_terms("face[beautiful]eyes", TERMS, MATCH).text == (
+        "face eyes"
+    )
+    # An underscore-joined removal still rejoins into one token.
+    assert apply_forbidden_terms("very_beautiful_face", TERMS, MATCH).text == (
+        "very_face"
+    )
+
+
 def test_separator_only_between_two_removals_is_dropped() -> None:
     # Punctuation that sat between two removed terms delimited nothing that
     # survives, so it is an artifact — only the run's outer sides may contribute
