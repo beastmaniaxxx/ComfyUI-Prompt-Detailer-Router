@@ -262,6 +262,12 @@
   - **挙動変更**: `"cinematic... portrait, beautiful eyes"`→`"cinematic. portrait, eyes"`（離れた `...` も正規化＝Req 9.7 の受容トレードオフ）、`"render () beautiful thing"`→`"render thing"`。新規に閉じた欠陥: 文末ピリオドの消失（`"Keep the shape, beautiful."`→`"Keep the shape."` と保持。`,`/`;` の末尾は従来どおり除去）。第5弾の指摘（`"face(beautiful)-detail"`→`"face -detail"`）は Req 9.6.1 の中で解消した: 空括弧が空白を残すのは**両隣が英数字のときに限る**とし、`"face(beautiful)-detail"` / `"face-(beautiful)detail"` はいずれも `"face-detail"`、`"face(beautiful)eyes"` は `"face eyes"` となる。
   - 計算量は線形のまま（括弧ネスト20000で約0.007s、`","*100000` で約0.007s、`"."*100000`×2 で約0.014s）。旧契約のテスト6件を新契約へ書き換え、全298 passed、snapshot 差分なし。
 
+- **PR#4 Codex レビュー第6弾対応（P2×2 修正 / P2×1 非修正）**: 前ラウンドで確立した Req 9.6 / 9.7 の決定表に照らして 3 件を判定。2 件は表への違反（実装バグ）、1 件は表の文言の明確化で対応した。
+  - **孤立アンダースコアの処理順（Req 9.6.1 / 9.6.3 違反）**: `apply_forbidden_terms` が孤立アンダースコア整形を `_normalize_separators` の**後**に実行していたため、`_` の外側にある空括弧・先頭末尾の区切りが規則 1/3 の対象から漏れていた（`"(beautiful_), face"`→`"(), face"`、`"beautiful_, face"`→`", face"`、`"face, beautiful_"`→`"face,"`）。整形を正規化の**前**へ移動。入力空間を機械的に列挙（禁止語の左右 8×8 × 括弧4種 × 前後トークン4種＝1024件）した実測で、**除去跡が残る入力は 312 件 → 0 件**。
+  - **空括弧判定の空白集合（Req 9.6.1 違反）**: `_INSUBSTANTIAL` が ASCII 空白のみを列挙し、後段の `[\s,;.]+` が Unicode 対応という**同一関数内の定義不一致**により、NBSP・全角スペースを含む括弧が「内容あり」と判定されて残り、直後の `\s` 正規化で中身だけ消えて空括弧が出力に残っていた（`"( beautiful ), face"`→`"(), face"`）。判定を `str.isspace()` へ統一。`re` の `\s` と `str.isspace()` が **Unicode 全域（0x110000 文字）で完全一致**することを実測確認済みで、以後この定義差は発生しない。
+  - **英数字判定の ASCII 限定（非修正・§17.5）**: `str.isalnum()` を `[A-Za-z0-9]` へ変更する提案は**採用しない**。Req 9.6.1 の目的は「2つの生存トークンが1語へ融合することを防ぐ」であり、ASCII 限定にすると `"café(beautiful)bar"`→`"cafébar"`、`"顔(beautiful)詳細"`→`"顔詳細"` と、第5弾で指摘された `"face(beautiful)eyes"`→`"faceeyes"` と同種の融合欠陥を非 ASCII テキストへ作り込む。代わりに requirements.md 9.6.1 へ「ここでの英数字は Unicode の英数字（`str.isalnum()`）」「禁止語マッチの語境界が ASCII 限定なのは `_` を区切り扱いにするための別目的であり一致させない」と明記した。
+  - テスト追加 4 件（`test_underscore_orphaned_by_removal_does_not_hide_outer_artifacts` / `test_no_removal_site_leaves_a_bracket_or_edge_separator_behind`（1024 件の網羅スイープ）/ `test_unicode_whitespace_counts_as_empty_bracket_content` / `test_alphanumeric_neighbour_test_is_unicode_not_ascii`）。全302 passed、`ruff check` All checks passed、snapshot 差分なし。計算量は線形のまま（括弧ネスト20000: 0.008s、`","*100000`: 0.007s、`"_"*100000`: 0.003s、NBSP×100000: 0.010s）。
+
 ### Ripple Report（Issue #3 / PR#4 全ラウンド）
 
 §16.4 の必須報告。PR コメントにのみ残していたものを spec 側へ集約する。

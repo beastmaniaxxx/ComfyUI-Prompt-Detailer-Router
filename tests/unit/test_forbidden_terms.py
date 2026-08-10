@@ -291,6 +291,66 @@ def test_emptied_bracket_keeps_alphanumeric_neighbours_apart() -> None:
     )
 
 
+def test_underscore_orphaned_by_removal_does_not_hide_outer_artifacts() -> None:
+    # An underscore left behind by the removal is part of the wreckage, so it is
+    # cleared before separator normalization runs; otherwise it masks the bracket
+    # or separator outside it and Req 9.6.1/9.6.3 are left unsatisfied
+    # (PR#4 review: "(beautiful_), face" used to end up as "(), face").
+    assert apply_forbidden_terms("beautiful_, face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("_beautiful, face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("(beautiful_), face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("[_beautiful_], face", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("face(_beautiful_)eyes", TERMS, MATCH).text == (
+        "face eyes"
+    )
+    assert apply_forbidden_terms("face, beautiful_", TERMS, MATCH).text == "face"
+    assert apply_forbidden_terms("face_beautiful_eyes", TERMS, MATCH).text == (
+        "face_eyes"
+    )
+
+
+def test_no_removal_site_leaves_a_bracket_or_edge_separator_behind() -> None:
+    # Sweep the shapes a removal can leave behind — underscores, separators and
+    # brackets on either side — and assert none of them survives into the output
+    # (Req 9.6.1/9.6.3). A single missed ordering leaves hundreds of these.
+    import itertools
+
+    sides = ["", "_", ",", ".", " ", "_,", ", ", " _"]
+    wraps = [("", ""), ("(", ")"), ("[", "]"), ("{", "}")]
+    for left, right, (open_, close) in itertools.product(sides, sides, wraps):
+        for prefix, suffix in [("face", "eyes"), ("", "eyes"), ("face", ""), ("", "")]:
+            text = f"{prefix}{open_}{left}beautiful{right}{close}{suffix}"
+            result = apply_forbidden_terms(text, TERMS, MATCH)
+            if not result.removed_count:
+                continue
+            assert "()" not in result.text, text
+            assert "[]" not in result.text, text
+            assert "{}" not in result.text, text
+            assert not result.text.startswith((",", ";", ".")), text
+            assert not result.text.endswith((",", ";")), text
+            assert "  " not in result.text, text
+
+
+def test_unicode_whitespace_counts_as_empty_bracket_content() -> None:
+    # The bracket scan and the ``\s`` of the separator patterns must share one
+    # whitespace definition. With an ASCII-only set, a NBSP or ideographic space
+    # made the pair look substantial here and was erased a pass later, stranding
+    # the empty pair (PR#4 review / Req 9.6.1).
+    for space in ["\u00a0", "\u3000", "\u2009", "\u2028"]:
+        text = f"({space}beautiful{space}), face"
+        assert apply_forbidden_terms(text, TERMS, MATCH).text == "face", repr(text)
+
+
+def test_alphanumeric_neighbour_test_is_unicode_not_ascii() -> None:
+    # Req 9.6.1 keeps a space only to stop two surviving tokens fusing into a
+    # word that was never written. The test is Unicode-wide: restricting it to
+    # [A-Za-z0-9] would fuse accented and CJK neighbours instead.
+    assert apply_forbidden_terms("café(beautiful)bar", TERMS, MATCH).text == "café bar"
+    assert apply_forbidden_terms("顔(beautiful)詳細", TERMS, MATCH).text == "顔 詳細"
+    # A non-alphanumeric neighbour still means there is no fusion to prevent.
+    assert apply_forbidden_terms("顔(beautiful)・詳細", TERMS, MATCH).text == "顔・詳細"
+
+
 def test_emptied_bracket_next_to_punctuation_leaves_no_space() -> None:
     # Req 9.6.1: with a non-alphanumeric neighbour there is no fusion to prevent,
     # so the pair leaves nothing and the author's punctuation keeps its spacing

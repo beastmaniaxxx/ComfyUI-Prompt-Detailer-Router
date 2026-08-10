@@ -49,8 +49,13 @@ _SEPARATOR_BEFORE_CLOSING = re.compile(r"[\s,;.]+([)\]}])")
 _SEPARATOR_AT_END = re.compile(r"[\s,;]+$")
 
 # Characters that do not, on their own, make a bracket pair "non-empty": a pair
-# enclosing only these (and nested empty pairs) carries no content.
-_INSUBSTANTIAL = frozenset(" \t\r\n\f\v,;.")
+# enclosing only whitespace, these separators, and nested empty pairs carries no
+# content. Whitespace is tested with ``str.isspace()`` rather than an ASCII list
+# so this pass and the ``\s`` of the separator patterns above share one
+# definition — otherwise a NBSP or an ideographic space inside a bracket would
+# make the pair look substantial here and be erased by ``\s`` a pass later,
+# stranding the now-empty pair in the output.
+_INSUBSTANTIAL_SEPARATORS = frozenset(",;.")
 _OPEN_TO_CLOSE = {"(": ")", "[": "]", "{": "}"}
 _CLOSE_TO_OPEN = {close: opener for opener, close in _OPEN_TO_CLOSE.items()}
 
@@ -112,7 +117,7 @@ def _strip_empty_bracket_pairs(text: str) -> str:
                     stack[-1][1] = True
                 out.append(ch)
         else:
-            if ch not in _INSUBSTANTIAL and stack:
+            if not (ch.isspace() or ch in _INSUBSTANTIAL_SEPARATORS) and stack:
                 stack[-1][1] = True
             out.append(ch)
     return "".join(out)
@@ -187,10 +192,14 @@ def apply_forbidden_terms(
 
     # Separator normalization runs only when something was actually removed
     # (Req 9.6): a string with no forbidden term keeps its punctuation verbatim.
+    # Orphaned underscores go first: an underscore left behind by the removal is
+    # itself part of the wreckage, and leaving it in place would hide the
+    # separator or bracket outside it from the normalization that follows
+    # ("(beautiful_), face" must reach "face", not "(), face").
     if total:
-        working = _normalize_separators(working)
         working = _ORPHAN_UNDERSCORE_LEFT.sub("", working)
         working = _ORPHAN_UNDERSCORE_RIGHT.sub("", working)
+        working = _normalize_separators(working)
     cleaned = normalize_whitespace(working)
     return ForbiddenScanResult(
         text=cleaned,
