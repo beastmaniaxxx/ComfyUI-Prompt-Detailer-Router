@@ -1,13 +1,18 @@
 """Forbidden-term removal (deterministic, LLM-independent).
 
-Pure domain logic (Requirements 9.2, 9.3, 9.5). Applies a shared, versioned
-forbidden-terms policy to a finalized string. Matching is
-``case_insensitive_literal`` with word boundaries so a banned word is removed as
-a whole word without mutilating longer words (e.g. "perfect" is not stripped
-from "imperfect"). Separator/bracket repair after removal is confined to the
-exact spots a term was removed, so punctuation that was already in the input is
-preserved — both away from any removal (the ellipsis in "cinematic... portrait")
-and directly against one ("face... beautiful eyes" -> "face... eyes").
+Pure domain logic (Requirements 9.2, 9.3, 9.5, 9.6, 9.7). Applies a shared,
+versioned forbidden-terms policy to a finalized string. Matching is
+``case_insensitive_literal`` with alphanumeric look-around boundaries, so a
+banned word is removed as a whole word without mutilating longer words
+("perfect" is not stripped from "imperfect") while ``_`` still counts as a
+separator ("perfect_face" -> "face").
+
+When at least one term is removed, the leftover separators are cleaned up by the
+separator normalization of Req 9.6, applied **uniformly to the whole string**
+(Req 9.7): empty bracket pairs go, each run of separators collapses to its
+strongest separator, and separators against the string ends or a bracket edge
+are dropped. A string with no removal is never touched beyond whitespace
+normalization.
 """
 
 from __future__ import annotations
@@ -27,40 +32,25 @@ CASE_INSENSITIVE_LITERAL = "case_insensitive_literal"
 _ALNUM_LEFT = r"(?<![A-Za-z0-9])"
 _ALNUM_RIGHT = r"(?![A-Za-z0-9])"
 
-# A private sentinel marks each spot where a term was removed, so separator and
-# bracket repair (Req 9.3) can be confined to the immediate neighbourhood of a
-# removal. It is a control character that never appears in a normal prompt (any
-# stray occurrence in the input is stripped up front).
-_SENTINEL = "\x00"
-_S = re.escape(_SENTINEL)
-
 # Strip underscores left dangling at a token boundary after a term is removed
 # (e.g. "_face" -> "face", "very__face" -> "very_face"), without touching
 # intra-token underscores such as "upper_body".
 _ORPHAN_UNDERSCORE_LEFT = re.compile(r"(?<![A-Za-z0-9])_+")
 _ORPHAN_UNDERSCORE_RIGHT = re.compile(r"_+(?![A-Za-z0-9])")
 
-# A maximal run of whitespace/separators/sentinels. A run that contains at least
-# one sentinel marks a removal neighbourhood and is collapsed in ONE match by
-# ``_collapse_removal_run``; a run without a sentinel is unrelated punctuation
-# (e.g. an ellipsis) and is left untouched. This single, non-nested quantifier
-# scans each character once — no per-separator passes, no catastrophic
-# backtracking — so an arbitrarily long separator run adjacent to a removal is
-# repaired in a single linear pass regardless of its length.
-_REMOVAL_RUN = re.compile(rf"[\s,;.{_S}]+")
-_SEPARATORS = ",;."
-
-# Two or more consecutive dots are an ellipsis: authored content, never a
-# delimiter this module invented. When one sits on a side of a removal run it is
-# kept verbatim instead of being collapsed into a single separator, so
-# "face... beautiful eyes" -> "face... eyes" rather than "face. eyes".
-_ELLIPSIS = re.compile(r"\.{2,}")
-_OPENERS_STR = "([{"
-_CLOSERS_STR = ")]}"
+# Separator normalization (Req 9.6). Every pattern uses a single, non-nested
+# quantifier so each pass is linear in the input length with no backtracking.
+_SEPARATOR_STRENGTH = {".": 3, ";": 2, ",": 1}
+_SEPARATOR_RUN = re.compile(r"[\s,;.]+")
+_SEPARATOR_AT_OPENING = re.compile(r"(^|[(\[{])[\s,;.]+")
+_SEPARATOR_BEFORE_CLOSING = re.compile(r"[\s,;.]+([)\]}])")
+# A trailing "." terminates the last sentence and is kept; a trailing "," or ";"
+# lost its operand with the removed term and goes.
+_SEPARATOR_AT_END = re.compile(r"[\s,;]+$")
 
 # Characters that do not, on their own, make a bracket pair "non-empty": a pair
-# enclosing only these (and nested empty pairs) is an artifact of a removal.
-_INSUBSTANTIAL = frozenset(" \t\r\n\f\v,;.") | {_SENTINEL}
+# enclosing only these (and nested empty pairs) carries no content.
+_INSUBSTANTIAL = frozenset(" \t\r\n\f\v,;.")
 _OPEN_TO_CLOSE = {"(": ")", "[": "]", "{": "}"}
 _CLOSE_TO_OPEN = {close: opener for opener, close in _OPEN_TO_CLOSE.items()}
 
@@ -80,49 +70,47 @@ class ForbiddenScanResult:
 
 
 def _strip_empty_bracket_pairs(text: str) -> str:
-    """Drop bracket pairs that wrapped a removal and now enclose only artifacts.
+    """Drop bracket pairs that hold no content (Req 9.6.1).
 
-    A single linear left-to-right pass with a stack. A matched bracket pair is
-    stripped (replaced by one sentinel) only when its interior holds no real
-    content AND it contained at least one sentinel — i.e. it actually wrapped a
-    removed term. A genuinely empty pair the user wrote (``()`` with no removal
-    inside) is left untouched, keeping the repair confined to removal sites.
-    Arbitrary nesting (e.g. "((( sentinel )))") collapses in this one pass, so
-    the caller never re-scans per nesting level — avoiding quadratic blow-up.
+    One linear left-to-right pass with a stack. A matched pair is stripped when
+    its interior holds only whitespace, separators, or nested pairs that were
+    themselves stripped — so arbitrary nesting collapses in this single pass and
+    the caller never re-scans per nesting level.
+
+    A stripped pair leaves a space only when both of its neighbours are
+    alphanumeric, so "face(X)eyes" cannot fuse into one word once the term inside
+    is gone. When either neighbour is punctuation the pair leaves nothing, so a
+    hyphen or a separator the author wrote keeps its own spacing
+    ("face(X)-detail" -> "face-detail", not "face -detail").
     """
 
     if not any(ch in text for ch in "([{"):
         return text
     out: list[str] = []
-    # Each stack frame: [open index in ``out``, has_substance, has_sentinel].
+    # Each stack frame: [index of the opener in ``out``, has_substance].
     stack: list[list] = []
-    for ch in text:
+    for index, ch in enumerate(text):
         if ch in _OPEN_TO_CLOSE:
-            stack.append([len(out), False, False])
+            stack.append([len(out), False])
             out.append(ch)
         elif ch in _CLOSE_TO_OPEN:
             if stack and out[stack[-1][0]] == _CLOSE_TO_OPEN[ch]:
-                open_index, has_substance, has_sentinel = stack.pop()
-                if not has_substance and has_sentinel:
-                    del out[open_index:]
-                    out.append(_SENTINEL)
-                    if stack:
-                        stack[-1][2] = True
-                else:
-                    # Real content, or a genuinely empty user-written pair: keep
-                    # it, and treat it as substance for the enclosing pair.
+                open_index, has_substance = stack.pop()
+                if has_substance:
                     out.append(ch)
                     if stack:
                         stack[-1][1] = True
+                else:
+                    del out[open_index:]
+                    before = out[-1] if out else ""
+                    after = text[index + 1] if index + 1 < len(text) else ""
+                    if before.isalnum() and after.isalnum():
+                        out.append(" ")
             else:
                 # Unbalanced/mismatched closer: real content.
                 if stack:
                     stack[-1][1] = True
                 out.append(ch)
-        elif ch == _SENTINEL:
-            if stack:
-                stack[-1][2] = True
-            out.append(ch)
         else:
             if ch not in _INSUBSTANTIAL and stack:
                 stack[-1][1] = True
@@ -130,88 +118,45 @@ def _strip_empty_bracket_pairs(text: str) -> str:
     return "".join(out)
 
 
-def _collapse_removal_run(match: "re.Match[str]") -> str:
-    """Collapse one whitespace/separator/sentinel run that spans a removal.
+def _collapse_separator_run(match: "re.Match[str]") -> str:
+    """Collapse one separator run to its strongest separator (Req 9.6.2).
 
-    Runs without a sentinel are unrelated punctuation and returned unchanged.
-    For a run that held a removal, only its two sides touch surviving text —
-    everything between the first and last sentinel separated removed terms from
-    each other and is always dropped. With ``L``/``R`` the side groups and
-    ``bl``/``br`` telling whether the run abuts a boundary (the string start/end
-    or the inside edge of a bracket), the replacement is, in order:
-
-    1. ``bl and br`` -> nothing: no text survives beside the run.
-    2. an ellipsis in ``L``, else in ``R`` -> that ellipsis, plus a space unless
-       the run ends at a boundary. An ellipsis is authored content, not a
-       delimiter this module invented, so it survives wherever surviving text
-       sits beside the run ("face... X eyes" -> "face... eyes", "face, X... hair"
-       -> "face... hair", "face... X" -> "face...", "(face... X)" -> "(face...)").
-    3. ``bl or br`` -> nothing: the removed term was the leading/trailing element,
-       so the one delimiter group in play lost its operand.
-    4. otherwise one delimiter survives to join the two neighbours the removed
-       term stood between: the first separator of ``L``, else of ``R``, plus a
-       space ("a,, X ,, b" -> "a, b").
-    5. no separator but some whitespace -> a single space ("a X b" -> "a b").
-    6. a bare sentinel (the term was glued to its neighbours, e.g. wrapped in
-       brackets) -> a space when either neighbour is alphanumeric, so two
-       surviving tokens do not fuse into a word that was never written
-       ("face(X)eyes" -> "face eyes").
-    7. otherwise nothing: an underscore-joined removal such as "very_X_face",
-       left for the orphan-underscore step to rejoin.
+    A run of whitespace and separators becomes the strongest separator it holds
+    plus one space (". " > "; " > ", "), so "a,, b" -> "a, b" and "a, . b" ->
+    "a. b". A run with no separator at all becomes a single space.
     """
 
     run = match.group(0)
-    if _SENTINEL not in run:
-        return run
-    text = match.string
-    start, end = match.start(), match.end()
-    at_left_boundary = start == 0 or text[start - 1] in _OPENERS_STR
-    at_right_boundary = end == len(text) or text[end] in _CLOSERS_STR
-    if at_left_boundary and at_right_boundary:
-        return ""
-    left = run[: run.index(_SENTINEL)]
-    right = run[run.rindex(_SENTINEL) + 1 :]
-    ellipsis = _ELLIPSIS.search(left) or _ELLIPSIS.search(right)
-    if ellipsis is not None:
-        return ellipsis.group(0) if at_right_boundary else ellipsis.group(0) + " "
-    if at_left_boundary or at_right_boundary:
-        return ""
-    separators = [ch for ch in left if ch in _SEPARATORS] or [
-        ch for ch in right if ch in _SEPARATORS
-    ]
-    if separators:
-        return separators[0] + " "
-    if any(ch.isspace() for ch in run):
-        return " "
-    if text[start - 1].isalnum() or text[end].isalnum():
-        return " "
-    return ""
+    strongest = ""
+    strength = 0
+    for ch in run:
+        rank = _SEPARATOR_STRENGTH.get(ch, 0)
+        if rank > strength:
+            strongest = ch
+            strength = rank
+    return strongest + " " if strongest else " "
 
 
-def _repair_removal_sites(working: str) -> str:
-    """Clean up separators/brackets left exactly where terms were removed.
+def _normalize_separators(text: str) -> str:
+    """Apply the Req 9.6 separator normalization to the whole string.
 
-    Two linear passes, so cost is bounded regardless of separator-run length or
-    bracket nesting depth (no unbounded fixpoint, no per-separator iteration):
+    Four linear passes, in order: drop empty bracket pairs, collapse each
+    separator run to its strongest separator, then drop separators sitting
+    against the string start, a bracket edge, or the string end. Collapsing
+    before the edge passes keeps every remaining run at most two characters
+    long, so the edge patterns cannot backtrack over a long run.
 
-    1. Strip bracket pairs that wrapped a removal (``_strip_empty_bracket_pairs``),
-       collapsing any nesting depth in one stack pass.
-    2. Collapse each whitespace/separator/sentinel run that spans a removal
-       (``_collapse_removal_run``) in one regex pass; unrelated punctuation
-       (runs with no sentinel) is preserved.
-
-    Finally, underscores orphaned by the removal are tidied. Repair stays
-    confined to removal sites, so punctuation elsewhere is untouched.
+    The end-of-string pass keeps a trailing ".", which terminates the last
+    sentence of a composed prompt, and drops a trailing "," or ";", which lost
+    its operand along with the removed term.
     """
 
-    working = _strip_empty_bracket_pairs(working)
-    working = _REMOVAL_RUN.sub(_collapse_removal_run, working)
-    # Every sentinel lives inside a collapsed run above, so none remain; this is
-    # a defensive no-op for any not adjacent to a run.
-    working = working.replace(_SENTINEL, "")
-    working = _ORPHAN_UNDERSCORE_LEFT.sub("", working)
-    working = _ORPHAN_UNDERSCORE_RIGHT.sub("", working)
-    return working
+    text = _strip_empty_bracket_pairs(text)
+    text = _SEPARATOR_RUN.sub(_collapse_separator_run, text)
+    text = _SEPARATOR_AT_OPENING.sub(r"\1", text)
+    text = _SEPARATOR_BEFORE_CLOSING.sub(r"\1", text)
+    text = _SEPARATOR_AT_END.sub("", text)
+    return text
 
 
 def apply_forbidden_terms(
@@ -226,8 +171,7 @@ def apply_forbidden_terms(
     if match != CASE_INSENSITIVE_LITERAL:
         raise ValueError(f"Unsupported forbidden-term match mode: {match!r}")
 
-    # The sentinel is an internal marker; never let one from the input survive.
-    working = text.replace(_SENTINEL, "")
+    working = text
     removed_terms: list[str] = []
     total = 0
     for term in terms:
@@ -236,15 +180,17 @@ def apply_forbidden_terms(
         pattern = re.compile(
             rf"{_ALNUM_LEFT}{re.escape(term)}{_ALNUM_RIGHT}", re.IGNORECASE
         )
-        working, count = pattern.subn(_SENTINEL, working)
+        working, count = pattern.subn("", working)
         if count:
             removed_terms.append(term)
             total += count
 
-    # Repair only where a term was actually removed; unrelated input (including
-    # legitimate ellipses or empty brackets) is preserved verbatim.
+    # Separator normalization runs only when something was actually removed
+    # (Req 9.6): a string with no forbidden term keeps its punctuation verbatim.
     if total:
-        working = _repair_removal_sites(working)
+        working = _normalize_separators(working)
+        working = _ORPHAN_UNDERSCORE_LEFT.sub("", working)
+        working = _ORPHAN_UNDERSCORE_RIGHT.sub("", working)
     cleaned = normalize_whitespace(working)
     return ForbiddenScanResult(
         text=cleaned,

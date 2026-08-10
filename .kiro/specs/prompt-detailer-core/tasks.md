@@ -254,6 +254,14 @@
   - **空括弧除去による隣接トークンの連結**: 括弧が単一センチネルへ畳み込まれた後、区切りも空白も持たないランが空文字を返し `"face(beautiful perfect)eyes"`→`"faceeyes"` と存在しない語を生成していた。**両隣のいずれかが英数字なら空白を残す**分岐を追加（→`"face eyes"`）。アンダースコア結合（`"very_beautiful_face"`→`"very_face"`）は両隣が `_` のため従来どおり連結。
   - 決定表: (1)両側境界→空 (2)L→Rの順で省略記号→当該省略記号（右境界なら空白なし） (3)片側境界→空 (4)L→Rの順で区切り1つ＋空白 (5)空白のみ→空白 (6)裸センチネルで隣が英数字→空白 (7)それ以外→空。計算量・線形1パスは不変。テスト追加: `test_ellipsis_against_a_boundary_is_preserved` / `test_removal_glued_to_its_neighbours_keeps_them_separate`。全297 passed。
 
+- **PR#4 Codex レビュー第5弾対応 — 仕様への再整合（是正処置）**: 第5弾の `forbidden_terms.py` 指摘（`face(beautiful)-detail`→`face -detail`）を個別修正せず、**実装が承認済み仕様から乖離している**という根本原因へ対処した。
+  - **乖離の実測**: Req 9.3 / design.md（`apply_forbidden_terms` Postconditions・テスト観点）が定めていたのは「除去 + 空白正規化 + `removed_count`」のみ。**区切り修復・空括弧修復・省略記号保持・トークン融合防止・除去位置限定はいずれも requirements / design に存在せず**、PR#2 第8ラウンド以降のレビュー指摘だけで発生した未仕様挙動だった。初版 `ad71722` の 63 行が 253 行へ肥大し、`forbidden_terms.py` だけで計8ラウンド（PR#2 8〜10、PR#4 1〜5）を消費した。
+  - **根本原因**: 複雑性の発生源は PR#2 第10ラウンドで導入した「**修復は除去位置に限定する**」制約1点。この制約がセンチネル埋め込み・左右サイド群の分解・境界判定・省略記号判定・隣接文字種判定を要求し、その組合せが毎ラウンドの新規指摘を生んでいた。さらに AGENTS §22.3 が指摘履歴から書かれ、レビューがそれを根拠に引用する自己強化構造になっていた（§2 の優先順位では AGENTS は design より下位）。
+  - **是正内容**: 未仕様挙動を requirements / design へ昇格させ、同時に「除去位置限定」を撤回した。requirements.md に **Req 9.6（区切り正規化の3規則）／Req 9.7（全体一様適用と受容するトレードオフ）** を追加。design.md の `forbidden_terms` 契約に決定表を追加し、traceability を 9.1–9.7 へ更新。AGENTS §22.3 の「修復は除去位置に限定」を「修復規則は仕様へ決定表として明記してから実装する／適用範囲を仕様で明示的に選ぶ」へ差し替え。
+  - **実装**: 253行 → 199行。センチネル・境界判定・省略記号・隣接文字種の分岐を全廃し、`_strip_empty_bracket_pairs`（スタック1パス）＋ `_collapse_separator_run`（最強区切りへ畳み込み）＋ 端の区切り除去3パスの**状態を持たない3規則**へ置換。除去ゼロの入力は従来どおり不変。
+  - **挙動変更**: `"cinematic... portrait, beautiful eyes"`→`"cinematic. portrait, eyes"`（離れた `...` も正規化＝Req 9.7 の受容トレードオフ）、`"render () beautiful thing"`→`"render thing"`。新規に閉じた欠陥: 文末ピリオドの消失（`"Keep the shape, beautiful."`→`"Keep the shape."` と保持。`,`/`;` の末尾は従来どおり除去）。第5弾の指摘（`"face(beautiful)-detail"`→`"face -detail"`）は Req 9.6.1 の中で解消した: 空括弧が空白を残すのは**両隣が英数字のときに限る**とし、`"face(beautiful)-detail"` / `"face-(beautiful)detail"` はいずれも `"face-detail"`、`"face(beautiful)eyes"` は `"face eyes"` となる。
+  - 計算量は線形のまま（括弧ネスト20000で約0.007s、`","*100000` で約0.007s、`"."*100000`×2 で約0.014s）。旧契約のテスト6件を新契約へ書き換え、全298 passed、snapshot 差分なし。
+
 ### Ripple Report（Issue #3 / PR#4 全ラウンド）
 
 §16.4 の必須報告。PR コメントにのみ残していたものを spec 側へ集約する。
