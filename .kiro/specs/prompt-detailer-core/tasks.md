@@ -175,12 +175,12 @@
 ## Implementation Notes
 
 - **リソースアクセス**: `resources` は package（`__init__.py` あり）だが `schemas/`・`presets/`・`policies/` サブディレクトリは package ではない。`importlib.resources.files("prompt_detailer_router.resources").joinpath("schemas", "detailer_plan_v1.schema.json")` の形で親 package から辿ること（loader タスク 4.1/4.2/4.3 で踏襲）。
-- **profile mapping 値 = detailer preset ファイル名 stem**（scope 名と一致、例 `"face": "face"`）。design の File Structure（`detailer/face.json`）に合わせた確定仕様で、reference §14.3 の例示 `"face_v1"` とは異なる。preset_loader（4.2）は mapping 値を `detailer/<value>.json` として解決し、その `scope` が key と一致することを検証する。
+- **profile mapping 値 = detailer preset ID（＝ファイル名 stem）**。**preset ID と scope は別概念で、一致は要求しない**（Req 10.5 / design preset_loader 契約）。detailer preset はファイル内に ID を持たず、ファイル名が profile mapping から参照される preset ID、`scope` は独立した属性。preset_loader（4.2）は mapping 値を `detailer/<value>.json` として解決し、**その `scope` が mapping key と一致すること**のみを `verify_profile_targets` で関係検証する。したがって `"face": "portrait_face_v1"`（中身の `scope` が `"face"`）は正常入力。現行リソースが `"face": "face"` の形になっているのは既定 preset 群の命名結果であって制約ではない。upscale preset の `preset_id` と profile の `profile_id` はファイル内に ID を持つため、ファイル名との一致を検証する（これらは preset ID の話であり、scope とは無関係）。
 - **開発依存**: `jsonschema>=4.20,<5`（インストール済み 4.26.0）は infra 限定。テストは `python -m pytest -q` で実行。
 - **禁止語マッチ**: `apply_forbidden_terms` は `case_insensitive_literal` を**単語境界（`\b`）付き**で解釈し、`imperfect` から `perfect` を削らない。builder（5.1/5.2）と snapshot（6.3）はこの語単位除去を前提にする。除去後は空白正規化される。
 - **domain 純粋性**: `tests/unit/test_domain_purity.py` が domain 配下の `jsonschema`/`requests`/`comfy` 等 import を静的に禁止。infra loader（4.x）でのみ `jsonschema` を使う。
 - **validate_plan は非 raise**: domain の `validate_plan` は `PlanValidationIssue` を列挙して返すのみ。user 向け `PlanValidationError` への昇格は application（5.3）が担う。
-- **infra loader の入口**（5.1/5.2 で利用）: `preset_loader.load_detailer_profile()`（既定 `default_v1`、mapping 先の存在と scope 一致を検証）／`load_detailer_preset(scope)`／`load_upscale_preset(id)`／`policy_loader.load_forbidden_terms_policy()`／`json_codec.encode_plan`。preset に `default_order` が無ければ `order_defaults` を使う。
+- **infra loader の入口**（5.1/5.2 で利用）: `preset_loader.load_detailer_profile()`（既定 `default_v1`、mapping 先の存在と scope 一致を検証）／`load_detailer_preset(preset_id)`（引数は profile mapping 値＝preset ID。scope と同一である必要はない）／`load_upscale_preset(preset_id)`／`policy_loader.load_forbidden_terms_policy()`／`json_codec.encode_plan`。preset に `default_order` が無ければ `order_defaults` を使う。
 - **json_codec の直列化**: `ensure_ascii=False, indent=2`、キー順は schema 準拠で固定（往復同値・snapshot 安定）。decode は Tier1(schema)→Tier2(`validate_plan`)。
 - **prompt_final の合成テンプレ**（6.3 snapshot が固定）: detailer = `join_prompt([feature_clause, preservation, local_details, restrictions])`（`feature_clause="Keep the described <features>."`、fallback は空）→ 禁止語除去。upscale = `join_prompt([global記述子, quality_details, preservation, restrictions])`→ 禁止語除去。global 記述子は `UPSCALE_GLOBAL_ORDER`（medium,style,lighting,camera,material,texture,environment,subject）順で dedup。
 - **prompt_core は禁止語フィルタ対象外**（Req 9.2 は prompt_final/upscale_prompt のみ）。scope 限定は `features_for_scope(scope)` + scope preset のみ使用で担保。
@@ -253,3 +253,37 @@
   - **境界に接する省略記号の破棄**: 境界の早期 return が `_ELLIPSIS` 判定より前にあり、`"face... beautiful"`→`"face"`、`"(face... beautiful)"`→`"(face)"` と利用者の `...` まで削除していた。省略記号判定を「両側とも境界」の場合のみの早期 return より後・片側境界の early return より前へ移し、**ランの傍らに生存テキストがある限り省略記号は保持**する規則へ統一（`"face..."` / `"(face...)"` / `"beautiful... face"`→`"... face"`）。両側とも境界（`"beautiful..."`）は生存要素が無いため全削除。
   - **空括弧除去による隣接トークンの連結**: 括弧が単一センチネルへ畳み込まれた後、区切りも空白も持たないランが空文字を返し `"face(beautiful perfect)eyes"`→`"faceeyes"` と存在しない語を生成していた。**両隣のいずれかが英数字なら空白を残す**分岐を追加（→`"face eyes"`）。アンダースコア結合（`"very_beautiful_face"`→`"very_face"`）は両隣が `_` のため従来どおり連結。
   - 決定表: (1)両側境界→空 (2)L→Rの順で省略記号→当該省略記号（右境界なら空白なし） (3)片側境界→空 (4)L→Rの順で区切り1つ＋空白 (5)空白のみ→空白 (6)裸センチネルで隣が英数字→空白 (7)それ以外→空。計算量・線形1パスは不変。テスト追加: `test_ellipsis_against_a_boundary_is_preserved` / `test_removal_glued_to_its_neighbours_keeps_them_separate`。全297 passed。
+
+### Ripple Report（Issue #3 / PR#4 全ラウンド）
+
+§16.4 の必須報告。PR コメントにのみ残していたものを spec 側へ集約する。
+
+```text
+## Ripple Report
+- SEARCH_KEYS: apply_forbidden_terms / ForbiddenScanResult / _collapse_removal_run /
+  _REMOVAL_RUN / _SEPARATORS / _ELLIPSIS / _SENTINEL / _strip_empty_bracket_pairs /
+  repair_separators / normalize_whitespace / load_detailer_preset /
+  verify_profile_targets / DetailerPreset.scope / profile mappings
+- SEARCH_COMMANDS:
+  grep -rn "apply_forbidden_terms\|ForbiddenScanResult" --include=*.py .
+  grep -rn "_collapse_removal_run\|_REMOVAL_RUN\|_SEPARATORS\|_ELLIPSIS\|_SENTINEL\|_strip_empty_bracket_pairs" --include=*.py --include=*.js .
+  grep -rn "repair_separators\|normalize_whitespace" --include=*.py .
+  grep -rn "load_detailer_preset\|verify_profile_targets" --include=*.py --include=*.md .
+  grep -rn "禁止語\|forbidden" .kiro/specs/prompt-detailer-core/{requirements,design,tasks}.md
+- IMPACTED_IN_BOUNDARY:
+  prompt_detailer_router/domain/forbidden_terms.py（除去跡修復の全面再設計）
+  prompt_detailer_router/infrastructure/preset_loader.py:195-204（scope==preset_id 検査の撤去）
+  tests/unit/test_forbidden_terms.py（+9 ケース）
+  tests/unit/test_preset_loader.py（preset ID != scope の許容）
+  .kiro/specs/prompt-detailer-core/tasks.md（Implementation Notes 178/183 の旧 preset ID 契約を更新）
+- IMPACTED_OUT_OF_BOUNDARY:
+  なし。呼び出し元は application/build_detailer_plan.py:75 と
+  application/build_upscale_prompt.py:64 の 2 箇所のみで、いずれも
+  ForbiddenScanResult の I/F 不変につき変更不要。
+- NO_IMPACT_CONFIRMED:
+  resources/schemas/（DETAILER_PLAN schema・Ollama response schema に該当キーなし）
+  resources/presets/・resources/prompts/（禁止語処理はリソースを参照しない）
+  web/js/（scope 解析・候補生成に禁止語処理は関与しない）
+  tests/snapshots/（upscale / scope 別 detailer とも差分なし）
+  __init__.py の NODE_CLASS_MAPPINGS（ノード I/F 変更なし）
+```
