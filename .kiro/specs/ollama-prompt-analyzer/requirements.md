@@ -58,6 +58,9 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 | prompt リソースの検証 | preset・profile・禁止語ポリシーと同一の共有検証経路を適用し、違反は分類 (h) として通信前に報告する（Requirement 10.13–10.15） | AGENTS.md §22.2「新しい loader は既存 loader と同じ検証を共有ヘルパ経由で適用する」に従う |
 | scope 分類の正しさの検証 | v1 では検証しない。抽出要求へ scope 別対象情報の定義を含めて分類精度を上げ（Requirement 2.5）、残存リスクを Requirement 3.16 に明記する | 利用者判断。「scope 外情報を `prompt_final` へ混入させない」責務は上流 core spec の Requirement 8.1 / 8.2 が所有しており、強制機構を Analyzer 側へ作り込むと責務が逆転する。採らなかった 2 案は Requirement 3.16 に記載 |
 | `timeout` の下限 | 0.1 秒（両端を含む）。丸めは小数第 3 位への切り捨て（Requirement 10.7 / 10.12） | 下限を量子化粒度から十分離すことで、丸め後に 0 となる経路と、丸めの半端値の扱いという新たな未定義分岐を同時に排除する |
+| 設定検証と空プロンプト判定の順序 | 設定検証を先に一括で行い、`original_prompt` が空でも未使用の設定項目の検証を省略しない（Requirement 10.17） | 利用者判断。採らなかった案は「空プロンプト経路では未使用の設定検証を省く」で、どの設定が未使用かの判定が経路ごとに増え、`ollama_url` / `timeout` / `temperature` / `keep_alive` それぞれに分岐が必要になるため。トレードオフは、配線確認のための空プロンプト実行でもモデル名の設定が要ること |
+| 失敗分類の優先順位 | HTTP ステータスによる分類を応答本文の状態より優先する（Requirement 4.12） | 利用者判断。空本文の 404 が (d) と (e) の双方に該当し、`retry_once` での通信回数が実装により変わる状態を解消する |
+| キャッシュキーの網羅規則 | 個別列挙（Requirement 11.3）に加え、出力生成に影響する全リソースの id と version を含める閉じた規則を置く（Requirement 11.13） | 列挙のみでは 3 ラウンド連続で構成要素の漏れが生じたため、リソース追加時のキー追加を規則として義務付ける |
 | preset 入力のウィジェット型 | UI は COMBO を表示してよいが、Python は任意 STRING として受け取り実行時に照合する（Requirement 1.1 / 1.10 / 1.11） | AGENTS.md §7.2 が `task_id` に定める扱いと §3.2「UI は利便性、バックエンドは正当性」に揃える。COMBO 単独に固定すると、preset ファイルを持たない環境でワークフローを読み込んだ際に値が失われる |
 
 ## Requirements
@@ -88,13 +91,13 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 3. The Analyzer shall LLM 向けの system prompt と修復指示 prompt を、`id`・`version`・`text` を必須キーとする version 付きリソースとして保持し、Python コードへ直書きしない。
 4. The Analyzer shall 抽出要求に、正規化済み scope 列、`subject_hint`、`original_prompt` を含める。
 5. The Analyzer shall 抽出要求に、各要求 scope の対象情報の定義（例: `face` は face・skin・expression・必要に応じた hairline、`clothing` は clothing・material・pattern・seams・folds）を含め、LLM が特徴を scope へ割り当てる基準を明示する。
-6. The Analyzer shall Requirement 2.5 の scope 別対象情報の定義を version 付きリソースとして保持し、Python コードへ直書きしない。
+6. The Analyzer shall Requirement 2.5 の scope 別対象情報の定義を、`id`（文字列）、`version`（文字列）、`definitions`（object。キーは対応 7 scope、値は非空文字列）を必須キーとする version 付きリソースとして保持し、Python コードへ直書きしない。
 7. When `subject_hint` が空文字または空白のみであるとき、the Analyzer shall 当該項目を抽出要求から省略する。
 8. The Analyzer shall `subject_hint` を抽出対象の優先順位付けと警告生成の補助にのみ用い、元プロンプトに無い特徴を補完する根拠として扱わない。
 9. The Analyzer shall `seed` と `temperature` を生成オプションとして送信し、`keep_alive` を指定された値のまま送信する。
 10. The Analyzer shall LLM に `task_id`、`prompt_final`、維持指示、preset 文言、最終 `upscale_prompt` を生成させない。
 11. The Analyzer shall 抽出要求において、各特徴文字列を `original_prompt` からの逐語部分文字列として返すことを LLM へ要求し、言い換え・要約・語形変化・翻訳を行わないよう指示する。
-12. If `original_prompt` が空文字または空白のみであるとき、then the Analyzer shall これを設定エラーとして扱わず、Ollama への抽出要求を送信せず、抽出結果を空として扱い、抽出を行わなかった旨を `warning` に記録する。
+12. If 設定検証（Requirement 10.17）を通過し、かつ `original_prompt` が空文字または空白のみであるとき、then the Analyzer shall これを設定エラーとして扱わず、Ollama への抽出要求を送信せず、抽出結果を空として扱い、抽出を行わなかった旨を `warning` に記録する。
 
 ### Requirement 3: 応答の検証と抽出結果の確定
 **Objective:** ワークフロー利用者として、LLM の応答が契約どおりであることを確認したうえで後続処理へ進みたい。そうすれば、壊れたデータや scope 外の情報を含んだまま画像生成へ進むことがない。
@@ -135,12 +138,13 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 3. The Analyzer shall HTTP の自動リダイレクト追従を無効化し、最初に受け取った 3xx 応答を `Location` の示す宛先へ再送せず、Requirement 4.2 の表に従って分類 (d) として扱う。`original_prompt`・model 名・生成オプションをリダイレクト先へ送信しない。
 4. The Analyzer shall モデル不存在を、ステータスコード 404 として分類 (d) に対応付け、エラー本文のテキスト一致による判定を行わない。エラー本文は `diagnostics`（Requirement 4.10 の経路ではエラーメッセージ）へ要約して出力する。
 5. The Analyzer shall HTTP 応答本文の上限サイズ 1 MiB を**読み込み時の上限**として強制し、受信量が上限に達した時点で読み込みを中断して以降を破棄する。応答本文全体をメモリへ読み込んでから上限超過を判定しない。
-6. The Analyzer shall 次のいずれかに該当する場合を分類 (e) 利用不能な応答本文として扱う: HTTP 応答本文が空である、HTTP 応答本文が上限サイズに達した、エンベロープの `message.content` が空である、`message.content` が空白のみである。
+6. The Analyzer shall **2xx 応答について**、次のいずれかに該当する場合を分類 (e) 利用不能な応答本文として扱う: HTTP 応答本文が空である、HTTP 応答本文が上限サイズに達した、エンベロープの `message.content` が空である、`message.content` が空白のみである。2xx 以外の応答には Requirement 4.12 の優先順位を適用する。
 7. The Analyzer shall 分類 (a)、(b)、(c)、(e)、(f)、(g) を**再試行可能な失敗**と定義し、分類 (d) と (h) を**再試行不可の失敗**と定義する。
 8. The Analyzer shall 分類した失敗種別を `diagnostics` に出力する。ただし Requirement 4.10 に該当する場合は、エラーメッセージへ出力する。
 9. If 失敗が発生したとき、then the Analyzer shall 内部例外の型名や stack trace を `upscale_prompt`・`warning`・`diagnostics`・エラーメッセージへそのまま到達させない。
 10. When 明示的なエラーとして扱う経路（Requirement 5.2 / 5.3 / 5.4 / 6.5）で失敗が発生したとき、the Analyzer shall 失敗した事実・分類・`failure_mode`・原因をエラーメッセージへ含め、`warning` と `diagnostics` を出力しない。原因は入力値を反復せず、失敗分類と安全な説明文で表現し、Requirement 9.3 / 9.4 の非開示規則をエラーメッセージにも同一に適用する。
 11. When 出力を生成する経路（通常出力、再試行成功、fallback 出力）で失敗が発生したとき、the Analyzer shall 失敗した事実と分類を `warning` と `diagnostics` の双方に記録する。
+12. The Analyzer shall HTTP ステータスによる分類を、応答本文の状態による分類より優先する。2xx 以外の応答は Requirement 4.2 の表に従って分類し、本文が空である、または上限サイズに達したことを理由に分類 (e) へ変更しない。
 
 ### Requirement 5: failure_mode による分岐
 **Objective:** ワークフロー利用者として、Ollama 障害時の振る舞いを明示的に選びたい。そうすれば、試行錯誤中はワークフローを止めず、最終生成時は意図しないプロンプトのまま先へ進めない、という使い分けができる。
@@ -196,12 +200,12 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 
 #### Acceptance Criteria
 1. The Analyzer shall `diagnostics` に、`failure_mode`、再試行の実施有無と回数、失敗種別、Ollama 応答までの所要時間、fallback 使用有無と理由、キャッシュ再利用の有無、破棄した空の特徴要素の件数、HTTP エラー本文の要約を含める。
-2. The Analyzer shall `diagnostics` に、使用した model 名、`upscale_preset` の id と version、`detailer_preset_profile` の id と version、参照した各 Detailer preset の id と version、禁止語ポリシーの id と version、prompt builder version、response schema version、system prompt の id と version、修復指示 prompt の id と version、scope 別対象情報定義の id と version を含める。
+2. The Analyzer shall `diagnostics` に、使用した model 名、`upscale_preset` の id と version、`detailer_preset_profile` の id と version、参照した各 Detailer preset の id と version、Detailer builder template の id と version、禁止語ポリシーの id と version、prompt builder version、response schema version、`DETAILER_PLAN` schema version、system prompt の id と version、修復指示 prompt の id と version、scope 別対象情報定義の id と version を含める。
 3. Where `diagnostics`、`warning`、またはエラーメッセージに Ollama 接続先を含めるとき、the Analyzer shall scheme・ホスト・ポートのみを出力し、利用者名やパスワードを含む userinfo、パス、クエリ文字列、フラグメントを出力しない。
 4. The Analyzer shall `diagnostics`、`warning`、およびエラーメッセージにローカルファイルシステムの絶対パスを出力しない。
 5. The Analyzer shall 出力を生成する経路（通常出力、再試行成功、fallback 出力）では、失敗の有無によらず `diagnostics` を出力する。
 6. The Analyzer shall 同一入力・同一応答に対して、`diagnostics` の項目集合と並び順を同一にする。
-7. When 明示的なエラーとして扱う経路（Requirement 4.10）で失敗が発生したとき、the Analyzer shall `diagnostics` を出力せず、Requirement 9.1 / 9.2 の項目をエラーメッセージへ含める。
+7. When 明示的なエラーとして扱う経路（Requirement 4.10）で失敗が発生したとき、the Analyzer shall `diagnostics` を出力せず、Requirement 9.1 / 9.2 の項目のうち**当該失敗の時点で確定している項目のみ**をエラーメッセージへ含める。確定していない項目は `unavailable` と明示し、空値・既定値・推測値で代替しない。
 
 ### Requirement 10: 接続設定と preset 指定の検証
 **Objective:** ワークフロー利用者として、設定の誤りを通信前に具体的なエラーとして知りたい。そうすれば、原因不明の通信エラーとして扱われることなく、修正すべき入力が分かる。
@@ -234,6 +238,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 14. If scope 別対象情報定義が対応 7 scope のいずれかの定義を欠くとき、then the Analyzer shall 分類 (h) 設定エラーとして報告し、定義の無い scope を空の定義で代替しない。
 15. The Analyzer shall Requirement 10.13 / 10.14 の検証を、preset・profile・禁止語ポリシーと同一の共有検証経路で適用し、prompt リソース専用の検証実装を設けない。
 16. The Analyzer shall 設定リソースおよび URL の解析で生じる内部例外を利用者へ到達させず、すべて分類 (h) 設定エラーへ変換する。
+17. The Analyzer shall Requirement 10.1–10.16 の設定検証を、`original_prompt` の空判定（Requirement 2.12）および Ollama への要求送信より前に実行する。設定エラーは `original_prompt` が空であるか否かによらず分類 (h) として報告し、当該実行で使用されない設定項目の検証を省略しない。
 
 ### Requirement 11: 再現性とキャッシュキー
 **Objective:** ワークフロー利用者として、設定を変えていないのに出力が変わったり、preset を変えたのに古い結果が使われたりする状態を避けたい。そうすれば、生成結果の差分がどの変更に由来するかを判断できる。
@@ -241,7 +246,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 #### Acceptance Criteria
 1. While Ollama が同一の応答を返す状況において、the Analyzer shall 同一の入力・同一 preset version・同一の禁止語ポリシー version・同一の prompt builder version に対して、`upscale_prompt`・`detailer_plan`・`detailer_json`・`warning` の 4 出力を同一にする。
 2. The Analyzer shall `diagnostics` を Requirement 11.1 の同一性契約の対象外とする。`diagnostics` は応答所要時間やキャッシュ再利用の有無など実行ごとに変化する値を含むため、Requirement 9.6 が定める項目集合と並び順の同一性のみを満たす。
-3. The Analyzer shall キャッシュキーを、`original_prompt`、正規化済み scope 列、**正規化時に破棄した未対応 scope 列**、`subject_hint`、正規化した接続先識別子、model 名、`seed`、`temperature`、正規化した `timeout`、`failure_mode`、system prompt の id と version、修復指示 prompt の id と version、scope 別対象情報定義の id と version、response schema version、`upscale_preset` の id と version、`detailer_preset_profile` の id と version、**要求 scope で実際に参照する全 Detailer preset の id と version**、禁止語ポリシーの id と version、prompt builder version から構成する。
+3. The Analyzer shall キャッシュキーを、`original_prompt`、正規化済み scope 列、**正規化時に破棄した未対応 scope 列**、`subject_hint`、正規化した接続先識別子、model 名、`seed`、`temperature`、正規化した `timeout`、`failure_mode`、system prompt の id と version、修復指示 prompt の id と version、scope 別対象情報定義の id と version、response schema version、`upscale_preset` の id と version、`detailer_preset_profile` の id と version、**要求 scope で実際に参照する全 Detailer preset の id と version**、**Detailer builder template の id と version**、禁止語ポリシーの id と version、prompt builder version、**`DETAILER_PLAN` schema version**から構成する。
 4. The Analyzer shall キャッシュキーにおける「正規化した接続先識別子」を `scheme://小文字化したホスト:実効ポート` とし、「正規化した `timeout`」を Requirement 10.12 の実効 timeout と同一の値とする。
 5. The Analyzer shall `keep_alive`、UI 表示設定、`diagnostics` の表示形式をキャッシュキーに含めない。
 6. The Analyzer shall 抽出要求・応答検証・prompt 構築のすべてに成功した結果のみをキャッシュ対象とする。
@@ -251,6 +256,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 10. The Analyzer shall `strict` または `retry_once` で最終的に失敗した結果をキャッシュ対象としない。
 11. When キャッシュキーの構成要素が 1 つでも変化したとき、the Analyzer shall キャッシュ済み結果を再利用せず、抽出要求を再実行する。
 12. When キャッシュ済み結果を再利用したとき、the Analyzer shall Ollama への要求を送信せず、4 出力をキャッシュ済みの値のまま返し、`diagnostics` を当該実行の値（キャッシュ再利用の事実を含む）として新たに構築する。
+13. The Analyzer shall 出力の生成に影響する全てのリソース（preset、profile、policy、prompt、template、定義、schema）の id と version をキャッシュキーへ含める。Requirement 11.3 の列挙は網羅すべき必須集合であり、出力へ影響するリソースを追加または差し替える変更では、同一の変更でキャッシュキーへの追加を行う。
 
 ### Requirement 12: 非機能要件（セキュリティ・テスト可能性・ランタイム）
 **Objective:** プロジェクト保守者として、LLM 応答を安全に扱い、実 Ollama なしで振る舞いを検証したい。そうすれば、外部プロセスの状態に左右されずに品質を保てる。
@@ -260,7 +266,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 2. The Analyzer shall Ollama 応答を実行可能なコードとして扱わず、raw HTML として描画しない。
 3. The Analyzer shall 無限再試行および無制限の待機を行わない。
 4. The Analyzer shall 通信・検証・再試行・fallback を含む主要な振る舞いを、実 Ollama を起動せずに fixture 応答で検証可能にする。
-5. The 統合テスト shall 成功応答、エンベロープ不正応答、`message.content` 欠落応答、`message.content` の Schema 違反応答、`message.content` の不正 JSON 応答、空応答、上限サイズ超過応答、接続失敗、タイムアウト、再試行可能な HTTP エラー、再試行不可の HTTP エラーの各 fixture について、3 種の `failure_mode` での出力を検証する。
+5. The 統合テスト shall 成功応答、エンベロープ不正応答、`message.content` 欠落応答、`message.content` の Schema 違反応答、`message.content` の不正 JSON 応答、空応答、上限サイズ超過応答、接続失敗、タイムアウト、再試行可能な HTTP エラー、再試行不可の HTTP エラー、外部ホストの `Location` を伴う 3xx 応答、空本文を伴う非 2xx 応答の各 fixture について、3 種の `failure_mode` での出力を検証する。
 6. The 統合テスト shall 空 `original_prompt` の入力について、Ollama へ要求が送信されないことと、抽出結果が空として扱われることを検証する。
 7. The 統合テスト shall `failure_mode=retry_once` において、(1) 不正 JSON → 成功、(2) Schema 違反 → 成功、(3) 再試行可能な通信失敗 → 成功 の 3 系列を順序付き fixture として検証し、Requirement 6.4 の再試行成功経路を通す。
 8. The 統合テスト shall Requirement 12.7 の各系列について 2 回目の要求内容を検証し、(1) と (2) では修復指示 prompt が付加されていること、(3) では初回と同一内容であることを確認する。
@@ -270,3 +276,6 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 12. The 統合テスト shall Requirement 11.3 のキー構成要素のそれぞれについて、当該値のみを変更した実行で抽出要求が再実行されることを検証し、代表 1 件での確認に留めない。
 13. The 統合テスト shall 実 Ollama を必要とするテストを通常のテスト実行から分離し、明示的に有効化された場合のみ実行する。
 14. The Analyzer shall Python 3.10 で動作する。
+15. The 統合テスト shall 3xx 応答 fixture について、`Location` が示す宛先への第 2 要求が一度も発生しないことと、当該応答が分類 (d) として扱われることを検証する。
+16. The 統合テスト shall 空本文を伴う非 2xx 応答 fixture について、Requirement 4.12 の優先順位に従い分類 (e) ではなく Requirement 4.2 の表に基づく分類となることを検証する。
+17. The 統合テスト shall 空 `original_prompt` かつ `ollama_model` が空文字の入力について、Requirement 10.17 に従い分類 (h) 設定エラーとなることを検証する。
