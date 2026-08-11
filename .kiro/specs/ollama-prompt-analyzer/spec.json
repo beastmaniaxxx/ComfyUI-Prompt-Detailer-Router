@@ -3,14 +3,14 @@
   "created_at": "2026-08-10T04:15:24Z",
   "updated_at": "2026-08-11T00:00:00Z",
   "language": "ja",
-  "phase": "requirements-generated",
+  "phase": "design-generated",
   "approvals": {
     "requirements": {
       "generated": true,
-      "approved": false
+      "approved": true
     },
     "design": {
-      "generated": false,
+      "generated": true,
       "approved": false
     },
     "tasks": {
