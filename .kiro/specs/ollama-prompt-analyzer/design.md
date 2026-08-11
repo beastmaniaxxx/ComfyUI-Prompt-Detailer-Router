@@ -180,7 +180,7 @@ prompt_detailer_router/
 │   ├── analyzer_cache_key.py                  # 新規: キャッシュキー構成要素と決定的なキー算出
 │   └── analyzer_report.py                     # 新規: warning / diagnostics / エラーメッセージの順序付き組み立て
 ├── infrastructure/
-│   ├── ollama_client.py                       # 新規: transport Protocol と urllib 実装（POST/非追従/上限読み/deadline）
+│   ├── ollama_client.py                       # 新規: transport Protocol と urllib 実装（POST/非追従/上限読み/名前解決込みの期限）
 │   ├── ollama_request.py                      # 新規: /api/chat payload 構築
 │   ├── format_schema.py                       # 新規: response Schema の $ref 解決射影（structured output 用）
 │   ├── ollama_response_decoder.py             # 新規: エンベロープ解析→content 取り出し→JSON 解析→Schema 検証
@@ -600,8 +600,9 @@ class AnalyzerReport:
 - **判断を持たない**。ステータス・本文・例外種別を事実として返すだけで、分類は行わない。
 - リダイレクトを追従せず、`Location` の宛先へ第 2 要求を出さない。
 - 応答本文は読み込み時に上限を強制し、全量をメモリへ読んでから判定しない。
+- **呼び出し側が観測する待機時間を、名前解決を含めて実効 timeout 以内に収める**。
 
-**Dependencies** — External: `urllib.request` / `urllib.error` / `time.monotonic`（P0）
+**Dependencies** — External: `urllib.request` / `urllib.error` / `time.monotonic` / `threading`（P0）
 
 **Contracts**: Service [x] / API [x]
 
@@ -633,15 +634,18 @@ class UrllibTransport:
 
 - Preconditions: `url` は `OllamaEndpoint.chat_url`、`timeout` は実効 timeout。
 - Postconditions: HTTP レベルのエラー応答（4xx / 5xx / 3xx）は例外ではなく `HttpOutcome` として返り、ステータスと本文要約が保たれる。`len(body) <= MAX_RESPONSE_BYTES` が常に成り立つ。
+- Postconditions: `post_json` は**名前解決を含めて** `timeout` 秒以内に必ず戻る。戻り値か例外のいずれかであり、それを超えて呼び出し側をブロックしない。
 - Invariants: 1 回の呼び出しにつき送信する要求は厳密に 1 件。
 
 **Implementation Notes**
 
 - Integration: `HTTPRedirectHandler.redirect_request` が `None` を返す派生クラスを opener に組み、3xx を `HTTPError` として捕捉してステータスを保ったまま `HttpOutcome` へ変換する。これにより `original_prompt`・model 名・生成オプションがリダイレクト先へ送られない（Requirement 4.3）。
-- Integration: 試行開始時に `deadline = monotonic() + timeout` を確定し、ソケット timeout には常に**残り時間**を渡す。`READ_CHUNK_BYTES` 単位の読み込みループの各反復で deadline を確認し、超過時は `TransportTimeoutError` を送出する（Requirement 6.6）。合計 2 試行のため総待機時間は `timeout` × 2 に収まる。
+- Integration（期限の強制）: 試行開始時に `deadline = monotonic() + timeout` を確定する。**接続・名前解決・送信・受信を含む 1 試行分の処理全体をワーカースレッドで実行し**、呼び出し側は deadline までのみ完了を待つ。期限到達時は結果を破棄して `TransportTimeoutError` を送出する（Requirement 6.6）。合計 2 試行のため、呼び出し側が観測する総待機時間は `timeout` × 2 に収まる。
+- Integration（なぜワーカースレッドが要るか）: `socket.create_connection` は `getaddrinfo` による名前解決を**ソケット生成と `settimeout` より前**に実行するため、Python 側の timeout は名前解決に一切適用されない。停止・遅延した resolver では、deadline とソケット timeout だけでは 1 試行を中断できず Requirement 6.6 を満たせない。Requirement 10.1 は DNS 名を許容し Requirement 10.7 は `timeout` の下限を 0.1 秒とするため、この経路は理論上のものではなく通常運用で到達する。
+- Integration: ワーカー内でもソケット timeout に**残り時間**を渡し、`READ_CHUNK_BYTES` 単位の読み込みループの各反復で deadline を確認する。ワーカーは期限を過ぎたら自発的に打ち切る。これにより通常経路ではスレッドの放棄が発生しない。
 - Integration: `MAX_RESPONSE_BYTES` に達した時点で読み込みを打ち切り、`truncated=True` を立てて残りを破棄する（Requirement 4.5）。
 - Validation: `Protocol` として抽象化することで、統合テストは要求 URL・method・payload を記録する fixture transport を差し込める（Requirement 12.9）。
-- Risks: 単一チャンクの読み込み中は中断できないため、上限は厳密には「`timeout` + 1 チャンク待ち」となる。ソケット timeout に残り時間を渡すことでソケット層でも抑制する。
+- Risks（放棄したワーカーの扱い）: 名前解決が OS 側で停止している場合、放棄したワーカーは resolver が返るまで存続し、生成済みの接続を保持し得る。放棄側は完了時に自身が生成した接続を必ず close し、結果を破棄して共有状態へ書き込まない規約とする。放棄は 1 実行あたり最大 2 件（再試行上限）に限られるため蓄積は有界である。呼び出し側の待機時間は放棄の有無によらず deadline 以内に収まる。
 
 #### ollama_request / format_schema
 
@@ -655,7 +659,8 @@ class UrllibTransport:
 ##### Service Interface
 
 ```python
-def build_format_schema() -> dict: ...      # $ref 解決済み・メタキーワード除去済みの射影
+def build_format_schema(response_schema: dict) -> dict: ...
+    # 引数の Schema から $ref を解決し、メタキーワードを除去した射影を返す
 
 def build_chat_payload(
     *,
@@ -663,6 +668,7 @@ def build_chat_payload(
     original_prompt: str,
     requested_scopes: tuple[str, ...],
     subject_hint: str,
+    format_schema: dict,
     system_prompt: LlmPromptResource,
     scope_definitions: ScopeDefinitions,
     seed: int,
@@ -678,8 +684,9 @@ def build_chat_payload(
 
 **Implementation Notes**
 
-- Integration: `format` には `ollama_response_v1.schema.json` の `$ref` を解決し `$schema` / `$id` / `title` / `description` を除いた射影を渡す。Ollama の grammar 変換に `$defs` / `$ref` の順序依存バグがあるための措置であり、`properties` / `required` / `additionalProperties: false` / `propertyNames` の enum はすべて保持する。正本は Schema ファイル 1 つのままで、射影は毎回そこから導出する（research.md 参照）。
-- Validation: **応答の適合性判定は元 Schema ファイルの validator のみが行う**。`format` は出力誘導の最善努力であり、適合の保証ではない。したがって分類 (g) は到達可能な経路として残る。
+- Integration: `format` には**引数で受け取った response Schema**の `$ref` を解決し `$schema` / `$id` / `title` / `description` を除いた射影を渡す。Ollama の grammar 変換に `$defs` / `$ref` の順序依存バグがあるための措置であり、`properties` / `required` / `additionalProperties: false` / `propertyNames` の enum はすべて保持する。既定では `ollama_response_v1.schema.json` が正本であり、射影は毎回そこから導出する（research.md 参照）。
+- Integration: `build_format_schema` は Schema を引数で受け取り、モジュール内から直接読み込まない。同一実行内で `ollama_response_decoder` が使う validator と**同じ Schema オブジェクト**から導出されることを、use case 側で保証する（後述の `analyze_prompt` 参照）。射影と検証が別々の Schema を見る状態を作らない。
+- Validation: **応答の適合性判定は Schema から構築した validator のみが行う**。`format` は出力誘導の最善努力であり、適合の保証ではない。したがって分類 (g) は到達可能な経路として残る。
 - Validation: scope 別対象情報の定義は、要求 scope の分だけでなく `ScopeDefinitions` から要求 scope に対応する定義を抽出して含める。逐語抽出の指示（Requirement 2.11）と否定記述を抽出しない指示（Requirement 2.13）は system prompt リソースのテキストが担い、Python へ直書きしない。
 - Risks: `think: false` が一部の Ollama / モデル組合せで 400 を返す。分類 (d) として本文要約が利用者へ届く。本文テキストによる自動回避は Requirement 4.4 が禁じるため実装しない。
 
@@ -700,11 +707,14 @@ class DecodeSuccess:
     analysis: PromptAnalysis          # 根拠照合前の生の抽出結果
     llm_warnings: tuple[str, ...]
 
-def decode_extraction_response(outcome: HttpOutcome) -> DecodeSuccess: ...
+def decode_extraction_response(
+    outcome: HttpOutcome, validator: Draft202012Validator
+) -> DecodeSuccess: ...
     # 失敗時は FailureKind (e) / (f) / (g) を伴う DecodeFailure を送出する
 ```
 
 - Preconditions: `outcome.status` は 2xx（非 2xx はステータス優先で先に分類済み、Requirement 4.12）。
+- Preconditions: `validator` は、同一実行で `build_format_schema` の入力となった Schema から構築されたものであること。
 - Postconditions: 判定順序は 応答処理フローの図に従う。`message.content` が空・空白のみなら (e)、エンベロープまたは抽出結果 JSON の解析失敗・重複キーは (f)、ルート非 object・`schema_version` 不一致・Schema 不適合は (g)。
 - Invariants: エンベロープ自体を抽出結果 Schema で検証しない。重複キーを後勝ちで採用しない。応答をコードとして評価せず HTML としても解釈しない（Requirement 3.14 / 12.1 / 12.2）。
 
@@ -712,7 +722,7 @@ def decode_extraction_response(outcome: HttpOutcome) -> DecodeSuccess: ...
 
 - Integration: `json.loads(..., object_pairs_hook=...)` による重複キー拒否を**エンベロープと抽出結果 JSON の双方**に適用する（Requirement 3.2）。
 - Integration: ルートが object でありかつ `schema_version` を含まない場合のみ現行 version（`1`）を注入する。ルートが非 object のときは注入せず (g)（Requirement 3.6 / 3.18）。異なる version の明示は (g) で、version 差を吸収しない（Requirement 3.7）。
-- Validation: Schema 検証には core の `get_ollama_response_validator()` を使い、未知フィールドは Schema の `additionalProperties: false` が拒否する（Requirement 3.5）。
+- Validation: Schema 検証には**引数で受け取った validator** を使い、モジュール内から core の cached validator を直接呼ばない。未知フィールドは Schema の `additionalProperties: false` が拒否する（Requirement 3.5）。既定経路では注入束の Schema が `ollama_response_v1.schema.json` であるため、検証内容は従来と同一である。
 - Risks: 部分採用・黙った補正を一切行わない。Schema 不適合は全体を (g) とする（Requirement 3.4）。
 
 #### llm_prompt_loader / preset_catalog / resource_fingerprint / analysis_cache
@@ -812,7 +822,20 @@ class AnalysisCache:
 - Integration: `llm_prompt_loader` は `read_config_json` / `reject_unknown_keys` / `require_str_fields` / `safe_resource_id` を呼ぶだけで、prompt リソース専用の検証実装を持たない（Requirement 10.15）。この共有を成立させるため、`preset_loader._require_str_fields` を `config_json.require_str_fields` へ移設し、`preset_loader` からも同一実装を使う。
 - Integration: `collect_fingerprint` は資源ごとに id の在り処が異なる差異を吸収する。`upscale_preset` と `detailer_profile` はファイル内 id、detailer preset・禁止語ポリシー・builder template はファイル名（要求 id）を id とする。version 定数（`PROMPT_BUILDER_VERSION`・response schema version・`DETAILER_PLAN` の `SCHEMA_VERSION`）も同じ entries に含める。
 - Integration（注入 seam・方針 A）: `ResourceLoaders` は core の loader 群を束ねた注入点であり、**リソース差し替えの唯一の公式な手段**である。`transport` / `cache` と同じく `analyze_prompt` の引数として渡し、既定は `DEFAULT_RESOURCE_LOADERS`。これにより Requirement 12.12（キー構成要素それぞれの単独変更）と Requirement 12.21（既存 core リソースの異常系）を、core 内部への monkeypatch なしで検証できる。core の `resource_paths` / `schema_loader` の内部へテストが依存する形を作らない。
-- Integration: `load_response_schema` を束に含めることで、`format` 射影と応答検証が同一の Schema 供給元を使うことを型で保証する。version 定数（`prompt_builder_version` / `plan_schema_version`）も束に持たせ、テストが定数変更によるキャッシュ無効化を検証できるようにする。
+- Integration: `load_response_schema` が返した Schema を、use case が `build_format_schema` の入力と応答検証用 validator の**双方の唯一の導出元**として使う。両者が別々の Schema を見る状態を作らない。validator は Schema から Analyzer 側で構築してプロセス内でキャッシュし、core の cached validator を経由しない。**トレードオフ**: core の validator キャッシュを再利用しなくなり同等のキャッシュを Analyzer 側に持つが、これが「同一供給元」を実際に成立させる対価である。
+- Integration: version 定数（`prompt_builder_version` / `plan_schema_version`）も束に持たせ、テストが定数変更によるキャッシュ無効化を検証できるようにする。
+
+**注入が出力へ及ぶ範囲（重要な限界）**
+
+束のフィールドは、資源ごとに影響範囲が異なる。この差は core の API を変更しないという制約（requirements の Adjacent expectations）から生じる。
+
+| 資源 | 消費者 | 注入が及ぶ範囲 |
+|---|---|---|
+| response schema | Analyzer（`format` 射影・応答検証） | **payload と検証の双方に及ぶ** |
+| system prompt / 修復指示 prompt / scope 別対象情報定義 | Analyzer（payload 構築） | **payload に及ぶ** |
+| upscale preset / profile / detailer preset / 禁止語ポリシー / builder template | **core の builder が id から内部で再読込** | 記述子の収集（キャッシュキー・`diagnostics`）と**読み込み時の検証のみ**。内容の差し替えは**出力テキストへ反映されない** |
+
+下段 5 資源の内容を出力へ反映させるには core の builder が資源そのものを受け取る API が必要であり、それは上流 spec の変更を要するため v1 では採らない。この限界は Requirement 12.12 / 12.21 の達成を妨げない。12.12 が求めるのは「キー構成要素の単独変更で**再実行される**こと」であり記述子の変更で足り、12.21 が求めるのは「異常系で**分類 (h) かつ要求件数 0**」であり記述子収集時の読み込み検証で足りるためである。
 - Validation: `preset_catalog` は preset ディレクトリ直下の `.json` の stem のうち `^[A-Za-z0-9_-]+$` を満たすものを辞書順で返す（Requirement 1.10）。列挙が失敗しても例外を送出せず、既定値のみを含む候補へ縮退する。UI 更新の失敗でワークフロー実行を妨げないため（AGENTS.md §8 / §13）。
 - Validation: キャッシュ格納は「抽出要求・応答検証・prompt 構築のすべてに成功し、再試行が発生せず、fallback でもない」実行に限る（Requirement 11.6 / 11.8–11.10）。容量超過時の退避は Requirement 11.11 が定義済みの「キャッシュ未命中 → 再実行」経路へ落ちるだけで、観測可能な契約を変えない。
 - Risks: `resources/prompts/` は core 所有の `detailer_builder_v1.json` と同居する。ファイル名と id を `extraction_*` / `scope_definitions_*` で明確に分け、`llm_prompt_loader` は core の template を読まない。
@@ -830,6 +853,7 @@ class AnalysisCache:
 
 - 実行順序を固定する: **設定検証（一括）→ 資源記述子の確定 → 空 `original_prompt` 判定 → キャッシュ照会 → 抽出 → 出力構築**。`original_prompt` が空でも未使用の設定項目の検証を省略しない（Requirement 10.21）。
 - **prompt リソース 3 種（system / 修復指示 / scope 別対象情報定義）は設定検証段で読み込む**。payload 構築時ではない。理由は 2 つで、(1) キャッシュキーがこれらの id と version を含む（Requirement 11.3）、(2) 不正な prompt リソースはキャッシュ命中時でも要求送信前に分類 (h) として報告されなければならない（Requirement 10.13）。
+- **response Schema は 1 実行につき注入束から 1 回だけ読み、`format` 射影と応答検証用 validator の双方をそこから導出する**。射影と検証が別々の Schema を見る状態を作らない。読み込んだ Schema と導出物を、payload 構築（`build_format_schema` / `build_chat_payload`）と応答復号（`decode_extraction_response`）へ明示的に引き渡す。
 - prompt 合成・preset 結合・禁止語検査・Plan 構築を自前で実装せず、core の builder に委ねる（Requirement 3.13 / 7.2）。
 - 生の内部例外を利用者へ到達させない。`ConfigurationError` は分類 (h) へ、`urllib` 由来の例外は transport が分類済みの型へ変換する（Requirement 4.9 / 10.16）。
 
@@ -1046,7 +1070,9 @@ Requirement 12.12 / 12.21 は「キー構成要素それぞれの単独変更」
 
 - `ResourceLoaders` の各フィールドを差し替えることで、preset / profile / policy / template / prompt / 定義 / schema の version 変更と異常系を個別に注入する。
 - `prompt_builder_version` / `plan_schema_version` は束の値であり、定数変更によるキャッシュ無効化を注入だけで検証できる。
-- 既定実装を使うテストが `schema_loader.get_validator` の `lru_cache` を共有する点に注意する。Schema 自体を差し替えるテストは注入した `load_response_schema` を使い、キャッシュ済み validator を経由させない。
+- Schema と prompt 系の注入は payload と応答検証へ実際に及ぶため、**注入した Schema が `format` と検証の双方に効くこと**を直接 assert してよい。
+- 一方 preset / profile / policy / template の注入は、上表の限界により**出力テキストへ反映されない**。これらについて「注入した preset の本文が `upscale_prompt` や `prompt_final` に現れる」ことを assert してはならない。検証してよいのは、キャッシュキーの変化による再実行と、異常系での分類 (h) および要求件数 0 である。
+- core の `schema_loader.get_validator` の `lru_cache` へテストが依存しない。応答検証の validator は注入された Schema から Analyzer 側で構築されるため、`lru_cache` の状態がテスト間で干渉しない。
 
 ### Integration Tests
 
@@ -1077,5 +1103,5 @@ fixture 応答と要求記録 transport を用い、実 Ollama を起動せず�
 - **応答の非実行**: 応答を `eval` / `exec` に渡さず、raw HTML として描画しない（Requirement 12.1 / 12.2）。
 - **秘密情報の非開示**: `ollama_url` の userinfo は分類 (h) として拒否し（v1 は認証付き Ollama 非対応）、報告文には scheme・ホスト・ポートのみを出す。ローカル絶対パスを出力しない（Requirement 9.3 / 9.4）。
 - **パス traversal の防止**: すべてのリソース id を `safe_resource_id` に通し、解決後パスが対象 resource ディレクトリ配下であることを保証する。
-- **資源枯渇の防止**: 応答本文 1 MiB 上限、再試行 1 回上限、試行ごとの deadline により、無制限の待機とメモリ消費を防ぐ（Requirement 12.3）。
+- **資源枯渇の防止**: 応答本文 1 MiB 上限、再試行 1 回上限、**名前解決を含む試行ごとの deadline** により、無制限の待機とメモリ消費を防ぐ（Requirement 12.3）。呼び出し側が観測する待機時間は、DNS 名ホストで resolver が停止した場合も実効 timeout 以内に収まる。
 - **ReDoS の回避**: ホスト・`keep_alive` の判定にネストした量指定子を使わない。根拠照合は正規表現を使わない（AGENTS.md §22.3）。

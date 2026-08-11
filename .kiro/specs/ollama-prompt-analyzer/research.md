@@ -68,6 +68,7 @@
   - `urllib.request` で全要件を満たせる。リダイレクトは `HTTPRedirectHandler.redirect_request` が `None` を返す派生クラスを opener に組むことで抑止でき、3xx は `HTTPError` として捕捉できるため**ステータスコードを保ったまま分類 (d) に落とせる**。
   - 応答本文は `response.read(n)` のチャンク読みで上限を強制でき、**全量をメモリへ読んでから判定する経路を作らない**（Requirement 4.5）。
   - `urllib` の `timeout` 引数は個々のソケット操作に適用されるため、低速に送り続ける応答では 1 回の要求が `timeout` を超え得る。Requirement 6.6 の厳密な上限には、**単調時計による試行ごとの deadline** をチャンク読みの境界で評価する必要がある。
+  - さらに `socket.create_connection` は `getaddrinfo` による名前解決を `settimeout` より前に実行するため、**名前解決には Python 側の timeout が一切適用されない**。deadline とソケット timeout だけでは DNS 名ホストの 1 試行を中断できない（詳細は後述の PR#6 レビュー由来の決定を参照）。
 - **Implications**:
   - `requests` / `httpx` を新規依存として追加しない。AGENTS.md §12 の方針、および `packaging-and-release` spec が所有する依存宣言へ本 spec が新しい制約を持ち込まないことを優先する。
   - transport は Protocol として抽象化し、fixture テストが要求を記録できるようにする（Requirement 12.4 / 12.9）。
@@ -113,16 +114,17 @@
 - **Rationale**: Requirement 3.4 の「黙って補正・部分採用しない」を成立させるには、判定点が 1 つでなければならない。
 - **Trade-offs**: 分類 (g) が実運用でも発生し得る。`retry_once` の修復指示 prompt 経路（Requirement 6.2）がその受け皿になる。
 
-### Decision: 試行ごとの単調時計 deadline で総待機時間を閉じる
+### Decision: 試行ごとの単調時計 deadline で総待機時間を閉じる（**後続の決定で更新済み**）
+
+> **更新**: 本決定の「追加の並行機構が要らない」という結論は、後述の「名前解決を含む 1 試行分をワーカーで期限管理する（PR#6 レビュー由来）」により**覆されている**。deadline とチャンク境界での評価は引き続き採用するが、それだけでは名前解決を中断できないため、1 試行分をワーカーで実行する構造が加わった。以下は当初の検討記録として残す。
 
 - **Context**: Requirement 6.6 は総待機時間 ≤ `timeout` × 2 を要求するが、`urllib` の `timeout` はソケット操作単位である。
 - **Alternatives Considered**:
   1. ソケット timeout のみに依存 — 低速に送り続ける応答で上限を超え得る。
-  2. 全体を別スレッドで走らせて強制中断 — 中断の副作用（ソケットリーク）と複雑さに見合わない。
-  3. 試行ごとの deadline をチャンク読み境界で評価（採用）。
-- **Selected Approach**: 試行開始時に `deadline = monotonic() + effective_timeout` を確定し、ソケット timeout には**残り時間**を渡す。1 MiB 上限のためのチャンク読みループの各反復で `monotonic() >= deadline` を確認し、超過時は分類 (b) タイムアウトとして中断する。
-- **Rationale**: 1 MiB 上限のためにどのみちチャンク読みが必要であり、その境界を deadline 評価点として再利用できる。追加の並行機構が要らない。
-- **Trade-offs**: 単一チャンクの読み込み中は中断できないため、上限は厳密には「`timeout` + 1 チャンク分の待ち」となる。ソケット timeout に残り時間を渡すことでこの誤差はソケット層でも抑えられる。
+  2. 全体を別スレッドで走らせて強制中断 — 中断の副作用（ソケットリーク）と複雑さに見合わないと当初判断した。**この判断は誤りで、後に採用へ転じた**。名前解決が Python 側 timeout の適用外であることを見落としていた。
+  3. 試行ごとの deadline をチャンク読み境界で評価（当初採用）。
+- **Selected Approach（当初）**: 試行開始時に `deadline = monotonic() + effective_timeout` を確定し、ソケット timeout には**残り時間**を渡す。1 MiB 上限のためのチャンク読みループの各反復で `monotonic() >= deadline` を確認し、超過時は分類 (b) タイムアウトとして中断する。
+- **Trade-offs（当初の受容、現在は解消）**: 単一チャンクの読み込み中は中断できないため上限が「`timeout` + 1 チャンク分の待ち」となる点を受容していた。ワーカー方式の採用によりこの誤差は解消された。
 - **Follow-up**: 実効 timeout は Requirement 10.12 の小数第 3 位切り捨て値を使う。
 
 ### Decision: キャッシュはプロセス内の容量上限付き LRU とする
@@ -180,7 +182,7 @@
 - **Selected Approach**: `infrastructure/resource_loaders.py` に `ResourceLoaders`（preset / profile / detailer preset / policy / template / prompt / 定義 / response schema の各 loader と、`prompt_builder_version` / `plan_schema_version` の 2 定数）を定義し、既定を `DEFAULT_RESOURCE_LOADERS` とする。`analyze_prompt` は `transport` / `cache` / `loaders` の 3 つだけを外部接点として受け取る。
 - **Rationale**: 利用者判断（方針 A）。Boundary を跨がず、既に `transport` / `cache` で採用済みの注入パターンと一貫する。version 定数を束に含めることで、定数変更によるキャッシュ無効化も注入だけで検証できる。
 - **Trade-offs**: `analyze_prompt` の引数が 3 つになり、`ResourceLoaders` という束の型が増える。代わりに core 内部へ依存するテストがゼロになる。
-- **Follow-up**: Schema 自体を差し替えるテストは注入した `load_response_schema` を使い、`get_validator` のキャッシュ済み validator を経由させない。
+- **Follow-up**: Schema 自体を差し替えるテストは注入した `load_response_schema` を使う。後述の PR#6 レビュー由来の決定により、応答検証の validator は注入 Schema から Analyzer 側で構築される構造になったため、`get_validator` のキャッシュ済み validator を経由しないことは**テストの作法ではなく構造として保証される**。
 
 ### Decision: COMBO 入力の組み込み検証を `VALIDATE_INPUTS` で無効化する（設計レビュー由来）
 
@@ -189,6 +191,29 @@
 - **Rationale**: これがないと、preset ファイルを持たない環境でワークフローを読み込んだ際にノードが実行前に弾かれ、Requirement 10.10 の分類 (h) 報告経路へ到達できない。requirements の確定判断（COMBO 単独に固定すると値が失われる）が想定したシナリオそのものである。
 - **Trade-offs**: `failure_mode` は 3 値固定で候補外の値に意味がないため対象に含めず、組み込み検証へ委ねる。
 - **Follow-up**: 統合テストは `analyze_prompt` を直接叩くためこの欠落を検出できない。ノード層のテストで `VALIDATE_INPUTS` が候補外の値に真を返すことを直接検証する。
+
+### Decision: 名前解決を含む 1 試行分をワーカーで期限管理する（PR#6 レビュー由来）
+
+- **Context**: Requirement 6.6 は「再試行を含む総待機時間が `timeout` の 2 倍を超えない」ことを求める。当初設計は単調時計の deadline とソケット timeout の残り時間渡しでこれを満たすとしていた。
+- **Findings（実測）**: Python 3.10.6 の `socket.create_connection` は `getaddrinfo` を**ソケット生成と `settimeout` より前**に呼ぶ（stdlib ソース該当行: `for res in getaddrinfo(...)` が `sock.settimeout(timeout)` に先行）。よって Python 側の timeout は名前解決に一切適用されない。Requirement 10.1 は DNS 名を許容し、Requirement 10.7 は `timeout` の下限を 0.1 秒とするため、この経路は通常運用で到達する。
+- **Alternatives Considered**:
+  1. **B-1. 1 試行分をワーカーで実行し呼び出し側が deadline まで待つ**（採用）
+  2. B-2. Requirement 6.6 の上限を「ソケット操作に対する上限」と再定義して名前解決を除外する — §21.2 分岐 A に従い requirements を先に確定させる必要があり、承認済み要件を弱める方向の変更になる
+  3. B-3. 事前に期限付きで名前解決し解決済み IP へ接続する — `getaddrinfo` を bound するには結局スレッドが要り、加えて https の SNI と証明書検証が複雑化する
+- **Selected Approach**: 利用者判断（B-1）。名前解決・接続・送信・受信を含む 1 試行分をワーカーで実行し、呼び出し側は deadline までのみ待つ。ワーカー内でも残り時間をソケット timeout に渡し、チャンク境界で自発的に打ち切るため、通常経路では放棄が発生しない。
+- **Rationale**: boundary 内（`ollama_client`）で閉じ、承認済み要件をそのまま満たせる。副次効果として、当初受容していた「単一チャンクの読み込み中は中断できない」残存誤差も解消され、`timeout + 1 チャンク待ち` の但し書きを削除できた。
+- **Trade-offs**: 名前解決が OS 側で停止した場合、放棄したワーカーは resolver が返るまで存続し接続を保持し得る。放棄側は完了時に自身の接続を必ず close し共有状態へ書き込まない規約とする。放棄は 1 実行あたり最大 2 件（再試行上限）で有界。
+- **Follow-up**: 名前解決を意図的に遅延させたスタブで、呼び出しが実効 timeout 以内に必ず戻ることを単体テストで検証する（タスク 3.1）。
+
+### Decision: 注入した Schema を消費経路へ通し、core 資源の注入限界を明記する（PR#6 レビュー由来）
+
+- **Context**: PR#6 のレビューが、`analyze_prompt(loaders=...)` に注入した Schema や preset が実際の消費経路へ届いていないことを指摘した。
+- **根拠確認の結果**: 指摘が挙げた「Requirement 12.12 / 12.21 を実装できない」は成立しない。12.12 が求めるのは「キー構成要素の単独変更で**再実行される**こと」であり資源記述子の変更で足り、12.21 が求めるのは「異常系で**分類 (h) かつ要求件数 0**」であり記述子収集時の読み込み検証で足りる。いずれも記述子収集が注入束経由であるため達成できる。引用された AGENTS.md L494-504 は §14 のテスト分類の箇条書きで、主張を述べていない。
+- **それでも修正した理由**: design.md が自己矛盾していた。「`load_response_schema` を束に含めることで `format` 射影と応答検証が同一の Schema 供給元を使うことを**型で保証する**」と宣言する一方、`build_format_schema()` は引数なし、`decode_extraction_response(outcome)` は core の cached validator を直接使う定義だった。宣言した契約を自分の interface が提供できず、実装者の解釈が割れる（AGENTS.md §17.5 の契約違反）。
+- **Selected Approach**: `build_format_schema(response_schema)` と `decode_extraction_response(outcome, validator)` へ署名を変更し、use case が注入束から 1 回読んだ Schema を両者の唯一の導出元とする。validator は Schema から Analyzer 側で構築してキャッシュし、core の cached validator を経由しない。
+- **Rationale**: 宣言した「同一供給元」を literal に成立させる。副次効果として、テストが core の `lru_cache` 状態へ依存しなくなる。
+- **Trade-offs**: core の validator キャッシュを再利用せず、同等のキャッシュを Analyzer 側に持つ。
+- **限界の明記**: preset / profile / 禁止語ポリシー / builder template は core の builder が id から内部で再読込するため、**内容の注入は出力テキストへ反映されない**。反映させるには core の builder が資源そのものを受け取る API が必要で、requirements の Adjacent expectations（`prompt-detailer-core` の API 変更を必要としない）に反するため v1 では採らない。design の表と Test Seams に、これらについて出力内容の変化を assert してはならない旨を明記した。
 
 ## Risks & Mitigations
 
