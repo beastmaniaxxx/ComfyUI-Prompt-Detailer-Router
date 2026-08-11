@@ -611,6 +611,7 @@ class AnalyzerReport:
 ```python
 MAX_RESPONSE_BYTES: int = 1024 * 1024
 READ_CHUNK_BYTES: int = 64 * 1024
+MAX_INFLIGHT_TRANSPORT_WORKERS: int = 4   # プロセス全体で同時に存在しうるワーカーの上限
 
 @dataclass(frozen=True, slots=True)
 class HttpOutcome:
@@ -643,9 +644,13 @@ class UrllibTransport:
 - Integration（期限の強制）: 試行開始時に `deadline = monotonic() + timeout` を確定する。**接続・名前解決・送信・受信を含む 1 試行分の処理全体をワーカースレッドで実行し**、呼び出し側は deadline までのみ完了を待つ。期限到達時は結果を破棄して `TransportTimeoutError` を送出する（Requirement 6.6）。合計 2 試行のため、呼び出し側が観測する総待機時間は `timeout` × 2 に収まる。
 - Integration（なぜワーカースレッドが要るか）: `socket.create_connection` は `getaddrinfo` による名前解決を**ソケット生成と `settimeout` より前**に実行するため、Python 側の timeout は名前解決に一切適用されない。停止・遅延した resolver では、deadline とソケット timeout だけでは 1 試行を中断できず Requirement 6.6 を満たせない。Requirement 10.1 は DNS 名を許容し Requirement 10.7 は `timeout` の下限を 0.1 秒とするため、この経路は理論上のものではなく通常運用で到達する。
 - Integration: ワーカー内でもソケット timeout に**残り時間**を渡し、`READ_CHUNK_BYTES` 単位の読み込みループの各反復で deadline を確認する。ワーカーは期限を過ぎたら自発的に打ち切る。これにより通常経路ではスレッドの放棄が発生しない。
+- Integration（ワーカーの上限と backpressure）: ワーカーは**プロセス全体で共有する上限付きプール**から確保し、同時に存在しうる本数を `MAX_INFLIGHT_TRANSPORT_WORKERS` に制限する。**スロットの獲得待ちは当該試行の deadline 予算の内側で行い**、deadline までに空きが出なければ `TransportTimeoutError` を送出する。これは新しい失敗種別ではなく既定義の分類 (b) タイムアウトへ落ちるため、`failure_mode` 分岐表に変更は生じない。スロット待ちが deadline 内である以上、1 試行は `timeout` 以内、2 試行で `timeout` × 2 以内という Requirement 6.6 の上限も維持される。
+- Integration（ワーカーの生存）: ワーカーは **daemon スレッド**とする。名前解決で停止したワーカーが 1 本でも非 daemon で残ると、Python は終了時に非 daemon スレッドを join するため **ComfyUI のプロセス終了がブロックされる**。daemon 化はこの経路を蓄積量に関係なく塞ぐ。
+- Integration（スロットの解放）: 放棄されたワーカーは、ブロッキング呼び出しから戻り次第、自身が生成した接続を close し、**プールのスロットを解放**し、結果を破棄して共有状態へ書き込まない。
 - Integration: `MAX_RESPONSE_BYTES` に達した時点で読み込みを打ち切り、`truncated=True` を立てて残りを破棄する（Requirement 4.5）。
 - Validation: `Protocol` として抽象化することで、統合テストは要求 URL・method・payload を記録する fixture transport を差し込める（Requirement 12.9）。
-- Risks（放棄したワーカーの扱い）: 名前解決が OS 側で停止している場合、放棄したワーカーは resolver が返るまで存続し、生成済みの接続を保持し得る。放棄側は完了時に自身が生成した接続を必ず close し、結果を破棄して共有状態へ書き込まない規約とする。放棄は 1 実行あたり最大 2 件（再試行上限）に限られるため蓄積は有界である。呼び出し側の待機時間は放棄の有無によらず deadline 以内に収まる。
+- Risks（放棄したワーカーの扱い）: 名前解決が OS 側で停止している場合、放棄したワーカーは resolver が返るまで存続し、生成済みの接続を保持し得る。**プロセス全体での上限は `MAX_INFLIGHT_TRANSPORT_WORKERS` であり、1 実行あたりの再試行上限からは導かれない**。実行を繰り返せば放棄は実行回数に比例して積み上がり得るため、有界性の根拠は共有プールの容量に置く。呼び出し側の待機時間は、スロット待ちを含めて放棄の有無によらず deadline 以内に収まる。
+- Risks（上限到達時の縮退）: 全スロットが停止中のワーカーで占有されると、以降の実行は分類 (b) タイムアウトへ縮退する。DNS が停止している状況では元より全実行がタイムアウトするため、これは新たな機能低下ではない。既定の `safe_fallback` では fallback 出力が返り、`strict` では明示的なエラーとなる（いずれも定義済みの経路）。
 
 #### ollama_request / format_schema
 
@@ -1103,5 +1108,5 @@ fixture 応答と要求記録 transport を用い、実 Ollama を起動せず�
 - **応答の非実行**: 応答を `eval` / `exec` に渡さず、raw HTML として描画しない（Requirement 12.1 / 12.2）。
 - **秘密情報の非開示**: `ollama_url` の userinfo は分類 (h) として拒否し（v1 は認証付き Ollama 非対応）、報告文には scheme・ホスト・ポートのみを出す。ローカル絶対パスを出力しない（Requirement 9.3 / 9.4）。
 - **パス traversal の防止**: すべてのリソース id を `safe_resource_id` に通し、解決後パスが対象 resource ディレクトリ配下であることを保証する。
-- **資源枯渇の防止**: 応答本文 1 MiB 上限、再試行 1 回上限、**名前解決を含む試行ごとの deadline** により、無制限の待機とメモリ消費を防ぐ（Requirement 12.3）。呼び出し側が観測する待機時間は、DNS 名ホストで resolver が停止した場合も実効 timeout 以内に収まる。
+- **資源枯渇の防止**: 応答本文 1 MiB 上限、再試行 1 回上限、**名前解決を含む試行ごとの deadline**、および**プロセス全体で共有する上限付きワーカープール**により、無制限の待機・メモリ消費・スレッド蓄積を防ぐ（Requirement 12.3）。呼び出し側が観測する待機時間は、DNS 名ホストで resolver が停止した場合も実効 timeout 以内に収まる。ワーカーは daemon とし、停止したワーカーがプロセス終了を妨げない。
 - **ReDoS の回避**: ホスト・`keep_alive` の判定にネストした量指定子を使わない。根拠照合は正規表現を使わない（AGENTS.md §22.3）。
