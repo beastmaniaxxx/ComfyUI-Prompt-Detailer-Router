@@ -1,8 +1,8 @@
 # Implementation Plan
 
-- [ ] 1. 基盤: 共有検証経路と LLM リソース
+- [x] 1. 基盤: 共有検証経路と LLM リソース
 
-- [ ] 1.1 必須文字列検証を共有ヘルパへ昇格し、既存 preset 読み込みを委譲へ置き換える
+- [x] 1.1 必須文字列検証を共有ヘルパへ昇格し、既存 preset 読み込みを委譲へ置き換える
   - 必須文字列の型検査と「空白のみ」拒否を、設定 JSON 共有ヘルパの公開関数として提供する
   - 既存の preset 読み込みが持つ同等の private 実装を、この共有関数への委譲に置き換える
   - 振る舞いを変えない。エラーメッセージの文面と例外種別を現行と一致させる
@@ -10,7 +10,7 @@
   - _Requirements: 10.15_
   - _Boundary: config_json, preset_loader_
 
-- [ ] 1.2 LLM 向けリソースファイル 3 種を作成する
+- [x] 1.2 LLM 向けリソースファイル 3 種を作成する
   - 抽出用 system prompt を作成し、明記された事実のみの抽出、逐語部分文字列での返却、言い換え・要約・語形変化・翻訳の禁止、否定記述からの抽出禁止、Markdown を返さないこと、被写体ヒントを補完の根拠にしないことを指示文として含める
   - 修復指示 prompt を作成し、直前の応答が不正 JSON または Schema 違反であった場合に再出力させる指示を含める
   - scope 別対象情報定義を作成し、対応 7 scope それぞれの対象情報を非空文字列で定義する
@@ -19,7 +19,7 @@
   - _Requirements: 2.3, 2.5, 2.6, 2.8, 2.11, 2.13_
   - _Boundary: resources/prompts_
 
-- [ ] 1.3 LLM リソース loader を共有検証経路の上に実装する
+- [x] 1.3 LLM リソース loader を共有検証経路の上に実装する
   - prompt リソースと scope 別対象情報定義を読み込み、不変な値オブジェクトとして返す
   - 検証は既存の共有ヘルパ（設定 JSON 読み込み、未知キー拒否、必須文字列検査、安全な id 形式）経由でのみ行い、専用の検証実装を持たない
   - 対応 7 scope のいずれかの定義を欠く場合を拒否し、欠落 scope を空定義で代替しない
@@ -29,7 +29,7 @@
   - _Depends: 1.1, 1.2_
   - _Boundary: llm_prompt_loader_
 
-- [ ] 1.4 リソース loader の注入束と既定実装を用意する
+- [x] 1.4 リソース loader の注入束と既定実装を用意する
   - upscale preset / profile / detailer preset / 禁止語ポリシー / builder template / prompt / scope 定義 / response schema の各読み込みと、prompt builder version・Plan schema version の 2 定数を 1 つの束として定義する
   - 既定実装は上流 core の loader をそのまま束ねたものとする
   - 束のフィールドを差し替えるだけで、リソースの version 変更と異常系をテストへ注入できる
@@ -331,3 +331,9 @@
   - 完了状態: 既定のテスト実行で実 Ollama 依存テストが収集されず、対象 Python バージョンで全テストが通る
   - _Requirements: 12.13, 12.14_
   - _Depends: 6.3, 6.4, 6.5, 6.6, 6.7_
+
+## Implementation Notes
+
+- 1.1: 共有ヘルパは `require_str_fields` に加えて `require_keys` も `config_json` へ昇格した。1.3 の「専用の検証実装を持たない」（Req 10.15）を満たすには必須キー検査も共有経路が要るため。`policy_loader` / `prompt_template_loader` は依然として同等の検査をインラインで持つ（1.1 の boundary 外のため未修正）。
+- 1.4: `load_response_schema` の既定実装は core の `schema_loader.load_schema` ではなく共有の `read_config_json` を経由する。束が Analyzer にとって Schema の唯一の供給点であり、手編集された Schema ファイルは生の `JSONDecodeError` ではなく設定エラーとして届く必要があるため（Req 10.16 / 12.21）。core の cached validator 経路は変更していない。
+- 1.4: 完了条件「注入した response schema が payload の射影と応答検証の双方へ到達する」は、消費側（3.2 の射影・3.4 の復号）が未実装のため、本タスクでは「供給点が単一であること」と「1 回の読み込みから両導出が注入内容を反映すること」までの検証に留めた。全経路の到達検証は 6.2 が所有する。

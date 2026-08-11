@@ -17,6 +17,8 @@ from prompt_detailer_router.infrastructure.config_json import (
     parse_config_json,
     read_config_json,
     reject_unknown_keys,
+    require_keys,
+    require_str_fields,
 )
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 from prompt_detailer_router.infrastructure.resource_paths import resource_file
@@ -69,34 +71,10 @@ def loads_config_json(text: str, what: str) -> dict:
     return parse_config_json(text, what)
 
 
-def _require_keys(data: dict, keys: tuple[str, ...], what: str) -> None:
-    missing = [key for key in keys if key not in data]
-    if missing:
-        raise ConfigurationError(
-            f"{what} is missing required keys: {', '.join(missing)}"
-        )
-
-
-def _require_str_fields(data: dict, keys: tuple[str, ...], what: str) -> None:
-    for key in keys:
-        value = data[key]
-        if not isinstance(value, str):
-            raise ConfigurationError(
-                f"{what} field '{key}' must be a string, got "
-                f"{type(value).__name__}."
-            )
-        # A blank required string would yield an empty/degenerate prompt at build
-        # time (e.g. an empty upscale_prompt); reject it at load instead.
-        if not value.strip():
-            raise ConfigurationError(
-                f"{what} field '{key}' must not be empty or whitespace-only."
-            )
-
-
 def parse_upscale_preset(data: dict) -> UpscalePreset:
-    _require_keys(data, _UPSCALE_KEYS, "Upscale preset")
+    require_keys(data, _UPSCALE_KEYS, "Upscale preset")
     reject_unknown_keys(data, _UPSCALE_KEYS, "Upscale preset")
-    _require_str_fields(data, _UPSCALE_KEYS, "Upscale preset")
+    require_str_fields(data, _UPSCALE_KEYS, "Upscale preset")
     return UpscalePreset(
         version=data["version"],
         preset_id=data["preset_id"],
@@ -107,11 +85,11 @@ def parse_upscale_preset(data: dict) -> UpscalePreset:
 
 
 def parse_detailer_preset(data: dict) -> DetailerPreset:
-    _require_keys(data, _DETAILER_KEYS, "Detailer preset")
+    require_keys(data, _DETAILER_KEYS, "Detailer preset")
     reject_unknown_keys(
         data, _DETAILER_KEYS + _DETAILER_OPTIONAL_KEYS, "Detailer preset"
     )
-    _require_str_fields(data, _DETAILER_KEYS, "Detailer preset")
+    require_str_fields(data, _DETAILER_KEYS, "Detailer preset")
     if data["scope"] not in SUPPORTED_SCOPES:
         raise ConfigurationError(
             f"Detailer preset 'scope' must be one of {SUPPORTED_SCOPES}, "
@@ -135,9 +113,9 @@ def parse_detailer_preset(data: dict) -> DetailerPreset:
 
 
 def parse_detailer_profile(data: dict) -> DetailerProfile:
-    _require_keys(data, _PROFILE_KEYS, "Detailer profile")
+    require_keys(data, _PROFILE_KEYS, "Detailer profile")
     reject_unknown_keys(data, _PROFILE_KEYS, "Detailer profile")
-    _require_str_fields(data, ("version", "profile_id"), "Detailer profile")
+    require_str_fields(data, ("version", "profile_id"), "Detailer profile")
     mappings = data["mappings"]
     if not isinstance(mappings, dict):
         raise ConfigurationError("Detailer profile 'mappings' must be an object.")

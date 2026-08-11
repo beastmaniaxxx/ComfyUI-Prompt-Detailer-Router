@@ -1,0 +1,13 @@
+{
+  "id": "scope_definitions_v1",
+  "version": "1.0",
+  "definitions": {
+    "face": "Facial features only: face shape and parts, eyes, eyebrows, eyelashes, nose, mouth and lips, facial skin and complexion, expression and gaze, and the hairline where it borders the face.",
+    "hair": "Head hair only: hair color, length, cut and style, strands and texture, volume and flow, parting, and the hairline.",
+    "hands": "Hands only: hand pose and gesture, fingers and knuckles, nails, palms, and accessories worn on the hands such as rings or gloves.",
+    "body": "Whole-body physique and posture: build, proportions, pose and stance, limbs, body skin, and clothing as it covers the body.",
+    "upper_body": "Upper body from roughly the waist up: face, hair, neck, shoulders, arms, chest and torso, upper-body skin, and the clothing worn on the upper body.",
+    "clothing": "Worn garments and their materials only: garment types and layers, fabric and material, color and pattern, seams and stitching, folds and drape, and fastenings.",
+    "generic": "The target object itself when it is not a person part: its shape and structure, material, surface texture and finish, color, and visible wear or damage."
+  }
+}
