@@ -34,7 +34,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
   - packaging、Registry 対応、example workflow の同梱、CI 定義
 - **Adjacent expectations**:
   - `prompt-detailer-core` は、scope 正規化規則、Ollama response Schema、検証済み抽出結果の表現、Upscale / Detailer prompt builder、Plan Builder、Plan Validator、JSON codec、禁止語ポリシーを提供する。Analyzer はこれらを再実装せずそのまま用い、独自の正規化・合成・検証規則を持たない。本 spec は fallback 経路を含め、`prompt-detailer-core` の API 変更を必要としない。
-  - `prompt-detailer-core` の Requirement 8.1 / 8.2 は、`prompt_final` へ scope 外の情報を混入させない責務を Detailer Prompt Builder 側に置く。本 spec は検証済み抽出結果を供給する側であり、scope 分類の正しさを機構的に強制する責務を持たない（Requirement 3.18）。
+  - `prompt-detailer-core` の Requirement 8.1 / 8.2 は、`prompt_final` へ scope 外の情報を混入させない責務を Detailer Prompt Builder 側に置く。本 spec は検証済み抽出結果を供給する側であり、scope 分類の正しさを機構的に強制する責務を持たない（Requirement 3.20）。
   - `detailer-plan-selection` は Analyzer が出力した `DETAILER_PLAN` を消費するが、Ollama 通信・`failure_mode`・diagnostics は所有しない。Analyzer は fallback 出力であっても core の Plan 整合契約を満たした Plan を渡す。
   - `dynamic-detailer-task-combo` は Analyzer の `scopes` 入力値から UI 候補を生成する。Analyzer は `scopes` を利用者が編集可能な STRING 入力として保持し続けるが、UI 候補の生成と維持は所有しない。
   - `packaging-and-release` は依存関係の宣言と example workflow を所有する。本 spec はノードの入出力名と `failure_mode` の選択肢を、ワークフロー互換の対象として安定させる。
@@ -56,13 +56,15 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 | 抽出特徴の根拠照合 | LLM へ逐語部分文字列での抽出を要求し（Requirement 2.11）、NFC 正規化 + `casefold` 後の部分文字列一致で検証して不一致を破棄する（Requirement 3.8 / 3.9） | 利用者判断。採らなかった案は (a) 照合を行わない（捏造特徴が `prompt_final` へ入る経路が残る）、(b) core の response Schema へ根拠 span を追加する（上流 spec の変更を要し本 spec の Out of scope）。トレードオフは Requirement 3.15 に記載 |
 | HTTP リダイレクト | 自動追従を無効化し、最初の 3xx を分類 (d) として扱う（Requirement 4.3） | 利用者判断。`ollama_url` の宛先を制限しない方針（Requirement 10.4）と組み合わさると、`original_prompt` が別ホストへ再送される経路が生じるため |
 | prompt リソースの検証 | preset・profile・禁止語ポリシーと同一の共有検証経路を適用し、違反は分類 (h) として通信前に報告する（Requirement 10.13–10.15） | AGENTS.md §22.2「新しい loader は既存 loader と同じ検証を共有ヘルパ経由で適用する」に従う |
-| scope 分類の正しさの検証 | v1 では検証しない。抽出要求へ scope 別対象情報の定義を含めて分類精度を上げ（Requirement 2.5）、残存リスクを Requirement 3.18 に明記する | 利用者判断。「scope 外情報を `prompt_final` へ混入させない」責務は上流 core spec の Requirement 8.1 / 8.2 が所有しており、強制機構を Analyzer 側へ作り込むと責務が逆転する。採らなかった 2 案は Requirement 3.18 に記載 |
+| scope 分類の正しさの検証 | v1 では検証しない。抽出要求へ scope 別対象情報の定義を含めて分類精度を上げ（Requirement 2.5）、残存リスクを Requirement 3.20 に明記する | 利用者判断。「scope 外情報を `prompt_final` へ混入させない」責務は上流 core spec の Requirement 8.1 / 8.2 が所有しており、強制機構を Analyzer 側へ作り込むと責務が逆転する。採らなかった 2 案は Requirement 3.20 に記載 |
 | `timeout` の下限 | 0.1 秒（両端を含む）。丸めは小数第 3 位への切り捨て（Requirement 10.7 / 10.12） | 下限を量子化粒度から十分離すことで、丸め後に 0 となる経路と、丸めの半端値の扱いという新たな未定義分岐を同時に排除する |
-| 設定検証と空プロンプト判定の順序 | 設定検証を先に一括で行い、`original_prompt` が空でも未使用の設定項目の検証を省略しない（Requirement 10.17） | 利用者判断。採らなかった案は「空プロンプト経路では未使用の設定検証を省く」で、どの設定が未使用かの判定が経路ごとに増え、`ollama_url` / `timeout` / `temperature` / `keep_alive` それぞれに分岐が必要になるため。トレードオフは、配線確認のための空プロンプト実行でもモデル名の設定が要ること |
+| 設定検証と空プロンプト判定の順序 | 設定検証を先に一括で行い、`original_prompt` が空でも未使用の設定項目の検証を省略しない（Requirement 10.20） | 利用者判断。採らなかった案は「空プロンプト経路では未使用の設定検証を省く」で、どの設定が未使用かの判定が経路ごとに増え、`ollama_url` / `timeout` / `temperature` / `keep_alive` それぞれに分岐が必要になるため。トレードオフは、配線確認のための空プロンプト実行でもモデル名の設定が要ること |
 | 失敗分類の優先順位 | HTTP ステータスによる分類を応答本文の状態より優先する（Requirement 4.12） | 利用者判断。空本文の 404 が (d) と (e) の双方に該当し、`retry_once` での通信回数が実装により変わる状態を解消する |
 | 根拠照合の語境界 | 一致位置の直前・直後が Unicode の英数字でないことを要求する（Requirement 3.8 / 3.16） | 利用者判断。`man` が `woman` の部分文字列として根拠と認められる欠陥を塞ぐ。core の禁止語照合が用いる ASCII 限定集合とは目的が異なるため一致させない（core Req 9.6.1 が同趣旨の不一致を明記済み） |
 | 否定文脈の判定 | v1 では検証しない。抽出段で LLM へ抑止を指示し（Requirement 2.13）、残存リスクを Requirement 3.17 に明記する | 利用者判断。否定語の集合と適用範囲が一意に定まらず解釈が収束しないため。`original_prompt` は positive prompt であり、negative prompt 入力は本 spec の対象外 |
 | 入力既定値 | `scopes` = `face,hair`、`temperature` = 0.2、`timeout` = 120.0、`keep_alive` = `5m`（Requirement 1.13） | 利用者判断。`scopes` はリファレンス §5 の主要ユースケース、`temperature` は §12.1 の例（抽出タスクのため低温）、`timeout` はローカル LLM の初回ロードを含む現実的な値、`keep_alive` は Ollama の標準（§12.1 の例 `0` は毎回モデルを解放し再実行のたびロードが走るため採らない） |
+| 特徴文字列の処理順序 | 前後空白の除去 → 空要素の破棄 → 根拠照合の順とし、後続へ渡すのは除去後の値（Requirement 3.19） | 利用者判断。前後空白は表記揺れであって内容ではなく、除去前の値で照合すると `" blue eyes "` のような応答が一律に破棄され fallback task になるため |
+| `keep_alive` の許容形式 | 十進数、または単一単位を付した文字列に限る。複合単位表記（`1h30m`）は v1 非対応（Requirement 10.17–10.19） | 利用者判断。複合表記の検証はネストした量指定子を必要とし、AGENTS.md §22.3 が禁じるカタストロフィックバックトラッキングを招くため |
 | キャッシュキーの網羅規則 | 個別列挙（Requirement 11.3）に加え、出力生成に影響する全リソースの id と version を含める閉じた規則を置く（Requirement 11.13） | 列挙のみでは 3 ラウンド連続で構成要素の漏れが生じたため、リソース追加時のキー追加を規則として義務付ける |
 | preset 入力のウィジェット型 | UI は COMBO を表示してよいが、Python は任意 STRING として受け取り実行時に照合する（Requirement 1.1 / 1.10 / 1.11） | AGENTS.md §7.2 が `task_id` に定める扱いと §3.2「UI は利便性、バックエンドは正当性」に揃える。COMBO 単独に固定すると、preset ファイルを持たない環境でワークフローを読み込んだ際に値が失われる |
 
@@ -102,7 +104,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 9. The Analyzer shall `seed` と `temperature` を生成オプションとして送信し、`keep_alive` を指定された値のまま送信する。
 10. The Analyzer shall LLM に `task_id`、`prompt_final`、維持指示、preset 文言、最終 `upscale_prompt` を生成させない。
 11. The Analyzer shall 抽出要求において、各特徴文字列を `original_prompt` からの逐語部分文字列として返すことを LLM へ要求し、言い換え・要約・語形変化・翻訳を行わないよう指示する。
-12. If 設定検証（Requirement 10.17）を通過し、かつ `original_prompt` が空文字または空白のみであるとき、then the Analyzer shall これを設定エラーとして扱わず、Ollama への抽出要求を送信せず、抽出結果を空として扱い、抽出を行わなかった旨を `warning` に記録する。
+12. If 設定検証（Requirement 10.20）を通過し、かつ `original_prompt` が空文字または空白のみであるとき、then the Analyzer shall これを設定エラーとして扱わず、Ollama への抽出要求を送信せず、抽出結果を空として扱い、抽出を行わなかった旨を `warning` に記録する。
 13. The Analyzer shall 抽出要求において、否定された記述（例: `without` を伴う記述）に含まれる特徴を抽出しないよう LLM へ指示する。
 
 ### Requirement 3: 応答の検証と抽出結果の確定
@@ -114,7 +116,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 3. When `message.content` を取り出したとき、the Analyzer shall その文字列を JSON として解析し、core spec の Ollama response Schema に対して検証する。
 4. If `message.content` の JSON が Schema に適合しないとき、then the Analyzer shall それを黙って補正・部分採用せず、分類 (g) Schema 違反として扱う。
 5. The Analyzer shall 抽出結果 JSON に未知フィールドが含まれる場合を、Schema 検証で拒否する。
-6. When 抽出結果 JSON が `schema_version` を含まないとき、the Analyzer shall 検証前に現行の response schema version を注入する。
+6. When 抽出結果 JSON の**ルートが object であり**、かつ `schema_version` を含まないとき、the Analyzer shall 検証前に現行の response schema version を注入する。
 7. If 抽出結果 JSON が現行と異なる `schema_version` を明示しているとき、then the Analyzer shall 分類 (g) Schema 違反として扱い、version 差を吸収しない。
 8. When 検証を通過した抽出結果の特徴文字列を採用するとき、the Analyzer shall `global` の全カテゴリと `scoped_features` の全 scope の各特徴文字列について、当該文字列と `original_prompt` の双方に Unicode NFC 正規化と `casefold` による大小文字の畳み込みを適用し、変換後の特徴文字列が変換後の `original_prompt` の部分文字列であり、**かつ一致位置の直前と直後の文字がいずれも Unicode の英数字（`str.isalnum()` が真）でない**ことを検証する。文字列の端は境界とみなす。
 9. If 特徴文字列が Requirement 3.8 の部分文字列一致を満たさないとき、then the Analyzer shall 当該特徴を後続処理へ渡さず、破棄した特徴数と、破棄が発生したカテゴリ名および scope 名を `warning` に記録する。
@@ -126,7 +128,9 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 15. The Analyzer shall Requirement 3.8 の照合により、LLM が言い換え・要約・語形変化を行った特徴が破棄され、当該 scope が抽出特徴を失って fallback task となる場合があることを受容する。採らなかった案は照合を行わないことであり、元プロンプトに無い特徴が確定情報として `prompt_final` へ入る経路が残るため選択しない。部分一致や語形変化を許容する曖昧照合も、判定基準が一意に定まらず解釈が収束しないため v1 の対象外とする。
 16. The Analyzer shall Requirement 3.8 の語境界判定に Unicode の英数字集合を用い、core の禁止語照合が用いる ASCII 限定集合（`[A-Za-z0-9]`）と一致させない。前者は非 ASCII 文字を含む記述で語内部一致を防ぐ目的、後者は `_` を区切りとして扱う目的であり、目的が異なるためである（上流 core spec Requirement 9.6.1 が同趣旨で両者の不一致を明記している）。`_` は Unicode の英数字ではないため本照合では区切りとして扱い、`perfect_face` から `face` を根拠として認める。
 17. The Analyzer shall v1 において、特徴が `original_prompt` において肯定的に断定されているかを検証しない。Requirement 3.8 の照合は、特徴が元プロンプトに語境界を伴って逐語で存在することのみを保証する。否定文脈（例: `without blue eyes`）の判定は、否定語の集合と適用範囲が一意に定まらず解釈が収束しないため v1 の対象外とし、これを受容するトレードオフとする。抽出段での抑止は Requirement 2.13 に依存する。なお `original_prompt` は positive prompt であり、negative prompt を受け取る入力は本 spec の対象外である。
-18. The Analyzer shall v1 において、抽出結果の scope 分類が正しいかを検証しない。Requirement 3.8 の逐語照合は `original_prompt` に存在しない特徴の混入を防ぐが、実在する特徴が誤った scope へ割り当てられた場合（例: `original_prompt` が衣服に言及しているとき、`scoped_features.face` に衣服の特徴が入る）を検出しない。分類精度の向上は Requirement 2.5 の scope 別対象情報の定義に依存する。`prompt_final` への scope 外情報の混入を機構的に防ぐ責務は、上流 spec `prompt-detailer-core` の Requirement 8.1 / 8.2 が所有する。採らなかった案は、(a) 本 spec で scope 別の許容語彙を定義して照合すること（語彙の帰属判定が一意に定まらず、taxonomy 自体が新たな仕様資産となるため）、(b) core の response Schema へ scope 判定根拠を追加すること（上流 spec の変更を要し本 spec の Out of scope であるため）。
+18. If 抽出結果 JSON のルートが object でないとき（配列・文字列・数値・真偽値・`null`）、then the Analyzer shall `schema_version` の注入を行わず、分類 (g) Schema 違反として扱う。
+19. The Analyzer shall 抽出結果の各特徴文字列について、(1) 前後空白の除去、(2) Requirement 3.11 による空要素の破棄、(3) Requirement 3.8 による根拠照合、の順で処理し、後続処理へ渡す文字列を (1) の除去後の値とする。
+20. The Analyzer shall v1 において、抽出結果の scope 分類が正しいかを検証しない。Requirement 3.8 の逐語照合は `original_prompt` に存在しない特徴の混入を防ぐが、実在する特徴が誤った scope へ割り当てられた場合（例: `original_prompt` が衣服に言及しているとき、`scoped_features.face` に衣服の特徴が入る）を検出しない。分類精度の向上は Requirement 2.5 の scope 別対象情報の定義に依存する。`prompt_final` への scope 外情報の混入を機構的に防ぐ責務は、上流 spec `prompt-detailer-core` の Requirement 8.1 / 8.2 が所有する。採らなかった案は、(a) 本 spec で scope 別の許容語彙を定義して照合すること（語彙の帰属判定が一意に定まらず、taxonomy 自体が新たな仕様資産となるため）、(b) core の response Schema へ scope 判定根拠を追加すること（上流 spec の変更を要し本 spec の Out of scope であるため）。
 
 ### Requirement 4: Ollama 呼び出し失敗の分類
 **Objective:** ワークフロー利用者として、失敗の原因を区別して把握したい。そうすれば、Ollama 未起動なのか、モデル未取得なのか、LLM 出力の問題なのかを切り分けられる。
@@ -231,7 +235,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
    | クエリ | 非空なら分類 (h) 設定エラー |
    | フラグメント | 非空なら分類 (h) 設定エラー |
 
-2. When `ollama_url` が Requirement 10.1 の全判定を通過したとき、the Analyzer shall 要求先 endpoint を `scheme://ホスト[:ポート]` に `/api/chat` を連結して構成する。
+2. When `ollama_url` が Requirement 10.1 の全判定を通過したとき、the Analyzer shall 要求先 endpoint を `scheme://ホスト[:ポート]` に `/api/chat` を連結して構成する。ホストが IPv6 literal である場合は `[` と `]` で囲んで authority を構成する（例: `http://[::1]:11434/api/chat`）。
 3. If `ollama_url` が Requirement 10.1 のいずれかで設定エラーと判定されたとき、then the Analyzer shall Ollama への要求を送信しない。
 4. The Analyzer shall `ollama_url` の宛先ホストの範囲を制限せず、ローカルホスト以外の Ollama サーバーへの接続を許容する。
 5. The Analyzer shall v1 において、パス prefix を持つリバースプロキシ配下の Ollama（例: `http://host/ollama`）を非対応とすることを受容する。採らなかった案はパスを prefix として保持し `/api/chat` を連結するもので、`http://host/api/chat` という誤入力が `/api/chat/api/chat` として送信され失敗原因の特定が困難になるため選択しない。
@@ -246,7 +250,10 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 14. If scope 別対象情報定義が対応 7 scope のいずれかの定義を欠くとき、then the Analyzer shall 分類 (h) 設定エラーとして報告し、定義の無い scope を空の定義で代替しない。
 15. The Analyzer shall Requirement 10.13 / 10.14 の検証を、preset・profile・禁止語ポリシーと同一の共有検証経路で適用し、prompt リソース専用の検証実装を設けない。
 16. The Analyzer shall 設定リソースおよび URL の解析で生じる内部例外を利用者へ到達させず、すべて分類 (h) 設定エラーへ変換する。
-17. The Analyzer shall Requirement 10.1–10.16 の設定検証を、`original_prompt` の空判定（Requirement 2.12）および Ollama への要求送信より前に実行する。設定エラーは `original_prompt` が空であるか否かによらず分類 (h) として報告し、当該実行で使用されない設定項目の検証を省略しない。
+17. The Analyzer shall `keep_alive` の許容形式を次のいずれかに限る: (a) 十進の整数または小数（先行 `-` を許容。秒として解釈される）、(b) (a) に単位 `ns` / `us` / `ms` / `s` / `m` / `h` を 1 つ付した文字列（例: `30s`、`5m`、`1h`、`0`、`-1`）。
+18. If `keep_alive` が Requirement 10.17 の許容形式に該当しないとき、then the Analyzer shall 分類 (h) 設定エラーとして報告する。
+19. The Analyzer shall v1 において、複合単位表記（例: `1h30m`）を `keep_alive` の非対応形式とすることを受容する。単一単位に限定するのは、複合表記の検証がネストした量指定子を必要とし、カタストロフィックバックトラッキングを招くためである。
+20. The Analyzer shall Requirement 10.1–10.19 の設定検証を、`original_prompt` の空判定（Requirement 2.12）および Ollama への要求送信より前に実行する。設定エラーは `original_prompt` が空であるか否かによらず分類 (h) として報告し、当該実行で使用されない設定項目の検証を省略しない。
 
 ### Requirement 11: 再現性とキャッシュキー
 **Objective:** ワークフロー利用者として、設定を変えていないのに出力が変わったり、preset を変えたのに古い結果が使われたりする状態を避けたい。そうすれば、生成結果の差分がどの変更に由来するかを判断できる。
@@ -255,7 +262,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 1. While Ollama が同一の応答を返す状況において、the Analyzer shall 同一の入力・同一 preset version・同一の禁止語ポリシー version・同一の prompt builder version に対して、`upscale_prompt`・`detailer_plan`・`detailer_json`・`warning` の 4 出力を同一にする。
 2. The Analyzer shall `diagnostics` を Requirement 11.1 の同一性契約の対象外とする。`diagnostics` は応答所要時間やキャッシュ再利用の有無など実行ごとに変化する値を含むため、Requirement 9.6 が定める項目集合と並び順の同一性のみを満たす。
 3. The Analyzer shall キャッシュキーを、`original_prompt`、正規化済み scope 列、**正規化時に破棄した未対応 scope 列**、`subject_hint`、正規化した接続先識別子、model 名、`seed`、`temperature`、正規化した `timeout`、`failure_mode`、system prompt の id と version、修復指示 prompt の id と version、scope 別対象情報定義の id と version、response schema version、`upscale_preset` の id と version、`detailer_preset_profile` の id と version、**要求 scope で実際に参照する全 Detailer preset の id と version**、**Detailer builder template の id と version**、禁止語ポリシーの id と version、prompt builder version、**`DETAILER_PLAN` schema version**から構成する。
-4. The Analyzer shall キャッシュキーにおける「正規化した接続先識別子」を `scheme://小文字化したホスト:実効ポート` とし、「正規化した `timeout`」を Requirement 10.12 の実効 timeout と同一の値とする。
+4. The Analyzer shall キャッシュキーにおける「正規化した接続先識別子」を `scheme://小文字化したホスト:実効ポート`（ホストが IPv6 literal である場合は `[` と `]` で囲む）とし、「正規化した `timeout`」を Requirement 10.12 の実効 timeout と同一の値とする。
 5. The Analyzer shall `keep_alive`、UI 表示設定、`diagnostics` の表示形式をキャッシュキーに含めない。
 6. The Analyzer shall 抽出要求・応答検証・prompt 構築のすべてに成功した結果のみをキャッシュ対象とする。
 7. The Analyzer shall キャッシュ対象を Requirement 11.1 の 4 出力、および応答の再処理なしには再現できない診断事実（破棄した空の特徴要素の件数）とする。`diagnostics` 文字列自体はキャッシュしない。
@@ -279,7 +286,7 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 6. The 統合テスト shall 空 `original_prompt` の入力について、Ollama へ要求が送信されないことと、抽出結果が空として扱われることを検証する。
 7. The 統合テスト shall `failure_mode=retry_once` において、(1) 不正 JSON → 成功、(2) Schema 違反 → 成功、(3) 再試行可能な通信失敗 → 成功 の 3 系列を順序付き fixture として検証し、Requirement 6.4 の再試行成功経路を通す。
 8. The 統合テスト shall Requirement 12.7 の各系列について 2 回目の要求内容を検証し、(1) と (2) では修復指示 prompt が付加されていること、(3) では初回と同一内容であることを確認する。
-9. The 統合テスト shall すべての抽出要求について、HTTP method が POST であること、endpoint path が `/api/chat` であること、および payload に Requirement 2.1–2.13 が定める全項目（逐次応答の無効化、思考出力の無効化、core の response Schema、正規化済み scope 列、scope 別対象情報の定義、`original_prompt`、`subject_hint`、`seed`、`temperature`、`keep_alive`、逐語抽出の指示、否定記述を抽出しない指示）が含まれることを、要求記録から検証する。
+9. The 統合テスト shall すべての抽出要求について、HTTP method が POST であること、endpoint path が `/api/chat` であること、および payload に Requirement 2.1–2.13 が定める全項目（逐次応答の無効化、思考出力の無効化、core の response Schema、正規化済み scope 列、scope 別対象情報の定義、`original_prompt`、`subject_hint`、`seed`、`temperature`、`keep_alive`、逐語抽出の指示、否定記述を抽出しない指示）が含まれることを、要求記録から検証する。ただし `subject_hint` は、入力が空文字または空白のみのときは payload に含まれないこと、非空のときは入力値が含まれることを検証する（Requirement 2.7）。
 10. The 統合テスト shall `original_prompt` に存在しない特徴を含む応答 fixture について、当該特徴が破棄され最終出力へ到達しないことを検証する。
 11. The 統合テスト shall 同一キーでの 2 回連続実行について、2 回目に Ollama への要求が送信されないこと、4 出力が 1 回目と同一であること、`diagnostics` にキャッシュ再利用が記録されることを検証する。
 12. The 統合テスト shall Requirement 11.3 のキー構成要素のそれぞれについて、当該値のみを変更した実行で抽出要求が再実行されることを検証し、代表 1 件での確認に留めない。
@@ -291,7 +298,11 @@ Ollama はローカルで動作する外部プロセスであり、未起動・�
 18. The 統合テスト shall Requirement 2.10 が禁じる項目（`task_id`、`prompt_final`、維持指示、preset 文言、最終 `upscale_prompt` の生成要求）が抽出要求の payload に含まれないことを検証する。
 19. The contract test shall system prompt、修復指示 prompt、scope 別対象情報定義のそれぞれについて、JSON 構文エラー、文字コードエラー、重複キー、非 object ルート、必須キー欠落、値の型不正、空白のみの必須文字列、未知フィールド、安全でない id 形式、ファイル内 id と要求 id の不一致の各異常系が拒否されることを検証する。
 20. The contract test shall scope 別対象情報定義から対応 7 scope のいずれかが欠落した場合に、Requirement 10.14 に従い拒否されることを検証する。
-21. The 統合テスト shall Requirement 12.19 / 12.20 の各異常系について、分類 (h) 設定エラーとなることと、Ollama への要求が送信されないことを検証する。
+21. The 統合テスト shall Requirement 12.19 / 12.20 の各異常系、および出力構築で参照する既存リソース（`upscale_preset`、`detailer_preset_profile`、各 Detailer preset、禁止語ポリシー、Detailer builder template、各 JSON Schema）の異常系について、分類 (h) 設定エラーとなることと、Ollama への要求件数が 0 であることを検証する。
 22. The 統合テスト shall エンベロープおよび抽出結果 JSON が重複キーを含む応答 fixture について、Requirement 3.2 に従い分類 (f) となり、後勝ちで採用されないことを検証する。
-23. The 統合テスト shall 語境界を満たさない特徴を含む応答 fixture（例: `original_prompt` が `woman` を含むときの特徴 `man`）について、当該特徴が Requirement 3.8 で破棄され最終出力へ到達しないことを検証する。
+23. The 統合テスト shall 語境界を満たさない特徴を含む応答 fixture について、当該特徴が Requirement 3.8 で破棄され最終出力へ到達しないことを検証する。fixture は、一致開始側が英数字であるもの（例: `original_prompt` が `woman` を含むときの特徴 `man`）と、一致終了側が英数字であるもの（例: `original_prompt` が `blueberry portrait` を含むときの特徴 `blue`）の双方を含める。
 24. The 統合テスト shall キャッシュ命中時に、応答由来の診断事実（破棄した空の特徴要素の件数）が `diagnostics` へ 1 回目と同一の値で再構築されることを検証する。
+25. The 統合テスト shall IPv6 literal ホスト、IPv4 ホスト、DNS 名の各 `ollama_url` について、Requirement 10.2 の endpoint が正しく構成され成功経路を通ることを検証する。
+26. The 統合テスト shall `keep_alive` の許容形式と非許容形式の各入力について、Requirement 10.17 / 10.18 に従い成功経路または分類 (h) となることを検証する。
+27. The 統合テスト shall 前後空白を伴う特徴を含む応答 fixture（例: `original_prompt` が `blue eyes` のときの特徴 `" blue eyes "`）について、Requirement 3.19 の順序に従い除去後の値で照合・採用されることを検証する。
+28. The 統合テスト shall `message.content` がルート非 object の JSON（例: `[]`、`null`）である応答 fixture について、Requirement 3.18 に従い分類 (g) となり、内部例外が利用者へ到達しないことを検証する。
