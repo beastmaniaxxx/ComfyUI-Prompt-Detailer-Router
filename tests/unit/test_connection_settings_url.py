@@ -264,6 +264,52 @@ def test_cache_identity_excludes_path_query_and_userinfo() -> None:
     assert identity == "http://127.0.0.1:11434"
 
 
+# --- control characters and whitespace (Requirements 10.1, 10.20) ---
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://local\nhost:11434",
+        "http://local\rhost:11434",
+        "http://local\thost:11434",
+        "http://local host:11434",
+        "http://localhost:114\n34",
+        "ht\ntp://localhost:11434",
+        "http://localhost:11434/\n",
+        "http://localhost\x7f:11434",
+        "http://local\x00host:11434",
+    ],
+)
+def test_control_characters_and_inner_whitespace_are_rejected(url: str) -> None:
+    """``urlsplit`` deletes these, so the host check runs on a different string.
+
+    Without a pre-parse guard ``http://local\\nhost:11434`` is accepted as
+    ``localhost`` and the request goes somewhere the user never typed
+    (Requirements 10.1, 10.20).
+    """
+    with pytest.raises(ConfigurationError):
+        parse_ollama_url(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "  http://127.0.0.1:11434",
+        "http://127.0.0.1:11434  ",
+        "\thttp://127.0.0.1:11434\n",
+        "http://127.0.0.1:11434\n",
+    ],
+)
+def test_surrounding_whitespace_is_rejected_uniformly(url: str) -> None:
+    """Surrounding spaces were already errors; tabs and newlines now match.
+
+    ``urlsplit`` deletes tab/CR/LF but keeps spaces, so identical-looking
+    padding was an error or a silent success depending on the character used.
+    """
+    with pytest.raises(ConfigurationError):
+        parse_ollama_url(url)
+
+
 # --- unexpected input types never leak a raw exception ---
 
 @pytest.mark.parametrize("value", [None, 11434, [], {}, b"http://127.0.0.1"])

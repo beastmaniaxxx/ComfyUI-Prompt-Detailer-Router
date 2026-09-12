@@ -30,10 +30,14 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 # Single quantifier, applied to one label at a time: the label list is split in
 # Python rather than expressed as a nested group.
-_DNS_LABEL = re.compile(r"^[A-Za-z0-9_-]{1,63}$")
-_DIGITS_AND_DOTS = re.compile(r"^[0-9.]+$")
-_PORT = re.compile(r"^[0-9]{1,5}$")
-_KEEP_ALIVE = re.compile(r"^-?[0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h)?$")
+# `$` also matches just before a trailing newline, so these patterns are
+# anchored with `\Z` and applied with `fullmatch`: "8080\n" and "5m\n" must be
+# configuration errors, not accepted values carrying a control character
+# (Requirements 10.1, 10.17, 10.18).
+_DNS_LABEL = re.compile(r"[A-Za-z0-9_-]{1,63}\Z")
+_DIGITS_AND_DOTS = re.compile(r"[0-9.]+\Z")
+_PORT = re.compile(r"[0-9]{1,5}\Z")
+_KEEP_ALIVE = re.compile(r"-?[0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h)?\Z")
 
 _MAX_DNS_NAME_LENGTH = 253
 _MIN_TIMEOUT = 0.1
@@ -116,7 +120,7 @@ def _validate_dns_name(host: str) -> str:
     if host.endswith("."):
         raise _fail("ollama_url host must not end with a dot.")
     for label in host.split("."):
-        if not _DNS_LABEL.match(label):
+        if not _DNS_LABEL.fullmatch(label):
             raise _fail(
                 f"ollama_url host label '{label}' is invalid: labels must be "
                 "1-63 characters of letters, digits, '-' or '_'."
@@ -149,7 +153,7 @@ def _split_host_and_port(hostport: str) -> tuple[str, bool, str]:
     host, _, port_text = hostport.partition(":")
     if not host:
         raise _fail("ollama_url must contain a host.")
-    if _DIGITS_AND_DOTS.match(host):
+    if _DIGITS_AND_DOTS.fullmatch(host):
         return _validate_ipv4(host), False, port_text
     return _validate_dns_name(host), False, port_text
 
@@ -157,7 +161,7 @@ def _split_host_and_port(hostport: str) -> tuple[str, bool, str]:
 def _resolve_port(port_text: str, scheme: str) -> int:
     if port_text == "":
         return _DEFAULT_PORTS[scheme]
-    if not _PORT.match(port_text):
+    if not _PORT.fullmatch(port_text):
         raise _fail(
             f"ollama_url port '{port_text}' is not a decimal integer."
         )
@@ -167,6 +171,31 @@ def _resolve_port(port_text: str, scheme: str) -> int:
     return port
 
 
+def _reject_control_and_whitespace(raw: str) -> None:
+    """Reject whitespace and control characters before ``urlsplit`` sees them.
+
+    ``urlsplit`` *deletes* tab, CR and LF anywhere in the input, so the host
+    checks would run on a string the user never typed: ``http://local\nhost``
+    parses as ``localhost`` and the request goes to a different destination
+    (Requirements 10.1, 10.20). Spaces were already errors because ``urlsplit``
+    keeps them and no host label may contain one; this makes the whole class
+    uniform instead of leaving the outcome dependent on which whitespace
+    character was used.
+
+    The rejected set is every Unicode whitespace character plus the C0 and C1
+    control ranges and DEL. No host form in the Requirement 10.1 table can
+    contain one of these, so nothing valid is lost.
+    """
+
+    for index, char in enumerate(raw):
+        if char.isspace() or ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F:
+            raise _fail(
+                f"ollama_url must not contain whitespace or control characters "
+                f"(found {char!r} at position {index}). Give the origin only, "
+                "for example 'http://127.0.0.1:11434'."
+            )
+
+
 def parse_ollama_url(raw: str) -> OllamaEndpoint:
     """Validate ``ollama_url`` against the Requirement 10.1 decision table."""
 
@@ -174,6 +203,7 @@ def parse_ollama_url(raw: str) -> OllamaEndpoint:
         raise _fail(
             f"ollama_url must be a string, got {type(raw).__name__}."
         )
+    _reject_control_and_whitespace(raw)
     try:
         parts = urlsplit(raw)
     except ValueError as exc:
@@ -279,7 +309,7 @@ def parse_keep_alive(raw: str) -> KeepAlive:
 
     if not isinstance(raw, str):
         raise _fail(f"keep_alive must be a string, got {type(raw).__name__}.")
-    match = _KEEP_ALIVE.match(raw)
+    match = _KEEP_ALIVE.fullmatch(raw)
     if not match:
         raise _fail(
             f"keep_alive '{raw}' is not supported: use a decimal number of "

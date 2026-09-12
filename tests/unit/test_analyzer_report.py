@@ -96,6 +96,44 @@ def test_llm_warnings_are_prefixed_and_land_in_their_slot() -> None:
     ]
 
 
+def test_every_line_of_a_multiline_llm_warning_is_attributed() -> None:
+    """Schema warnings may contain newlines (Requirement 3.12).
+
+    Prefixing only the first line leaves the rest indistinguishable from another
+    slot's event once ``render_warning`` joins everything with newlines.
+    """
+    report = AnalyzerReport()
+    report.add_llm_warnings(["ambiguous\nfallback used"])
+    assert report.render_warning().splitlines() == [
+        "LLM: ambiguous",
+        "LLM: fallback used",
+    ]
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+def test_all_newline_forms_are_attributed(newline: str) -> None:
+    report = AnalyzerReport()
+    report.add_llm_warnings([f"first{newline}second"])
+    assert report.render_warning().splitlines() == ["LLM: first", "LLM: second"]
+
+
+def test_blank_lines_inside_a_multiline_llm_warning_are_dropped() -> None:
+    report = AnalyzerReport()
+    report.add_llm_warnings(["first\n\n   \nsecond"])
+    assert report.render_warning().splitlines() == ["LLM: first", "LLM: second"]
+
+
+def test_multiline_llm_warning_keeps_slot_ordering() -> None:
+    report = AnalyzerReport()
+    report.add_warning(WarningSlot.RETRY_PERFORMED, "retried once")
+    report.add_llm_warnings(["ambiguous\nfallback used"])
+    assert report.render_warning().splitlines() == [
+        "LLM: ambiguous",
+        "LLM: fallback used",
+        "retried once",
+    ]
+
+
 def test_blank_llm_warnings_are_ignored() -> None:
     report = AnalyzerReport()
     report.add_llm_warnings(["", "   "])

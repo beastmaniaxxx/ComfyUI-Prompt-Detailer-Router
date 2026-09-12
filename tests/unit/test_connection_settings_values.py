@@ -200,6 +200,14 @@ def test_raw_value_is_preserved() -> None:
         "1e3",
         "0x10",
         "5m5",
+        # `$` matches before a trailing newline, so these slipped through and
+        # the newline reached the wire value (Requirements 10.17, 10.18).
+        "5m\n",
+        "5m\r",
+        "5m\r\n",
+        "300\n",
+        "-1\n",
+        "\n5m",
     ],
 )
 def test_unsupported_keep_alive_forms_are_configuration_errors(raw: str) -> None:

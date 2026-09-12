@@ -108,12 +108,19 @@ class AnalyzerReport:
         self._warnings.setdefault(slot, []).append(message)
 
     def add_llm_warnings(self, warnings: Sequence[str]) -> None:
-        """Record warnings that came from the LLM, marked as such (Requirement 3.12)."""
+        """Record warnings that came from the LLM, marked as such (Requirement 3.12).
+
+        A warning from the response Schema may contain newlines, and
+        ``render_warning`` joins every recorded line with newlines. Prefixing
+        only the first line would leave the remainder indistinguishable from
+        another slot's event, so each line is attributed individually.
+        """
 
         for warning in warnings:
-            if not warning.strip():
-                continue
-            self.add_warning(WarningSlot.LLM_WARNING, _LLM_WARNING_PREFIX + warning)
+            for line in warning.splitlines():
+                if not line.strip():
+                    continue
+                self.add_warning(WarningSlot.LLM_WARNING, _LLM_WARNING_PREFIX + line)
 
     def set_item(self, item: DiagnosticsItem, value: str) -> None:
         """Record a diagnostics value, replacing any earlier value for the item."""
