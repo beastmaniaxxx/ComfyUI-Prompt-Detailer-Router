@@ -27,8 +27,17 @@ PR Budget ブロックは次のコマンドの出力をそのまま貼り付け�
 
 <!--
 `python tools/pr_budget.py --format markdown` の出力で、ここから下を置き換えてください。
-OBSERVATIONS は推定値なので、実際の分類を確認して修正すること。
-VERDICT: OVER_BUDGET の場合は OVER_BUDGET_REASON を必ず埋めること（§19.3 該当なら分割不要）。
+CI (.github/workflows/pr-budget.yml) が次を検証します。空欄のままでは失敗します。
+
+- 必須フィールド（BASE / REVIEW_LINES / REVIEW_FILES / TEST_LINES / OBSERVATIONS / VERDICT）が非空
+- OBSERVATIONS から `(推定 — ...)` の注記が削除されている
+  ツールの出力は推定値です。§22.1 の実分類を確認し、注記を消してください。
+  書式はカンマ区切りで、各項目を分類記号 A〜E で始めます。該当なしは `-`。
+  例: `OBSERVATIONS: A 外部入力検証, C ドメイン不変条件`
+  F テストは数えません（AGENTS.md §19.2）。
+- VERDICT が、実測（行数・ファイル数）と申告分類から導かれる判定と一致している
+  3分類以上を申告した場合、VERDICT は OVER_BUDGET になります。
+- VERDICT: OVER_BUDGET なら OVER_BUDGET_REASON が埋まっている（§19.3 該当なら分割不要）
 -->
 
 ```text

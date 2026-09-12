@@ -33,6 +33,15 @@ REVIEW_MAX_LINES = 1500
 REVIEW_MAX_FILES = 30
 TEST_ADVISORY_LINES = 3000
 
+# §19.2: three or more mixed review-observation classes also forces a split.
+OBSERVATION_MAX_CLASSES = 3
+
+# §19.2 counts A-E only. F is excluded because §14 requires tests in every
+# implementation PR, so counting F would make two implementation classes
+# trip the condition almost always -- the same contradiction this section
+# removes by not counting test lines.
+OBSERVATION_LABEL_TEST = "F テスト"
+
 # --- Path classification ----------------------------------------------------
 
 CATEGORY_REVIEW = "REVIEW"
@@ -137,6 +146,17 @@ class Report:
         return self.buckets[CATEGORY_REVIEW]
 
     @property
+    def observation_classes(self) -> list[str]:
+        """Estimated §22.1 classes that count toward the §19.2 threshold.
+
+        ``F テスト`` is filtered out explicitly rather than relying on tests
+        never landing in the REVIEW bucket, so the exclusion stays visible if
+        the path classification changes.
+        """
+        found = observations(self.paths.get(CATEGORY_REVIEW, []))
+        return [label for label in found if label != OBSERVATION_LABEL_TEST]
+
+    @property
     def over_lines(self) -> bool:
         return self.review.added > REVIEW_MAX_LINES
 
@@ -145,13 +165,17 @@ class Report:
         return self.review.files > REVIEW_MAX_FILES
 
     @property
+    def over_observations(self) -> bool:
+        return len(self.observation_classes) >= OBSERVATION_MAX_CLASSES
+
+    @property
     def mixes_spec_and_code(self) -> bool:
         """True when spec documents and implementation share one PR (§19.1)."""
         return self.buckets[CATEGORY_SPEC].files > 0 and self.review.files > 0
 
     @property
     def verdict(self) -> str:
-        if self.over_lines or self.over_files:
+        if self.over_lines or self.over_files or self.over_observations:
             return "OVER_BUDGET"
         return "WITHIN_BUDGET"
 
@@ -162,6 +186,12 @@ class Report:
             out.append(f"REVIEW_LINES {self.review.added} > {REVIEW_MAX_LINES} (§19.2)")
         if self.over_files:
             out.append(f"REVIEW_FILES {self.review.files} > {REVIEW_MAX_FILES} (§19.2)")
+        if self.over_observations:
+            joined = ", ".join(self.observation_classes)
+            out.append(
+                f"OBSERVATIONS {len(self.observation_classes)} 分類 "
+                f">= {OBSERVATION_MAX_CLASSES} (§19.2, 推定): {joined}"
+            )
         return out
 
     @property
@@ -243,10 +273,32 @@ def build_report(entries: list[tuple[int, int, str]], base: str, head: str) -> R
     return Report(base=base, head=head, buckets=buckets, paths=paths)
 
 
-def resolve_base(explicit: str | None) -> str:
-    """Resolve the base ref: explicit flag, then the open PR, then fallbacks."""
-    if explicit:
-        return explicit
+def ref_exists(ref: str) -> bool:
+    """True when ``ref`` resolves in this clone."""
+    probe = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+        capture_output=True,
+        text=True,
+    )
+    return probe.returncode == 0
+
+
+def resolve_ref(name: str) -> str | None:
+    """Resolve a branch name to a ref that exists locally.
+
+    ``gh pr view`` reports a plain branch name (``main``), which does not
+    resolve in a clone that only has remote-tracking refs. Prefer the
+    remote-tracking form, since that is what a fresh clone or a CI checkout
+    actually has.
+    """
+    for candidate in (f"origin/{name}", name):
+        if ref_exists(candidate):
+            return candidate
+    return None
+
+
+def base_from_gh() -> str | None:
+    """Return the open PR's base branch name, or None when unavailable."""
     try:
         result = subprocess.run(
             ["gh", "pr", "view", "--json", "baseRefName"],
@@ -255,24 +307,49 @@ def resolve_base(explicit: str | None) -> str:
             encoding="utf-8",
             errors="replace",
         )
-        if result.returncode == 0:
-            name = json.loads(result.stdout).get("baseRefName")
-            if name:
-                return name
-    except (OSError, ValueError):
-        pass
+    except OSError:  # gh not installed
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout).get("baseRefName") or None
+    except ValueError:
+        return None
+
+
+def resolve_base(explicit: str | None) -> str:
+    """Resolve the base ref: explicit flag, then the open PR, then fallbacks.
+
+    Every candidate is verified before being returned, so the caller never
+    reaches ``git diff`` with an unresolvable revision.
+    """
+    if explicit:
+        resolved = resolve_ref(explicit)
+        if resolved is None:
+            raise MeasurementError(
+                f"base ref '{explicit}' を解決できません。"
+                f"`git fetch origin {explicit}` を実行するか、"
+                "解決可能な ref を --base で指定してください。"
+            )
+        return resolved
+
+    name = base_from_gh()
+    if name:
+        resolved = resolve_ref(name)
+        if resolved is not None:
+            return resolved
+
     for candidate in ("origin/develop", "develop", "origin/main", "main"):
-        probe = subprocess.run(
-            ["git", "rev-parse", "--verify", "--quiet", candidate],
-            capture_output=True,
-            text=True,
-        )
-        if probe.returncode == 0:
+        if ref_exists(candidate):
             return candidate
+
     raise MeasurementError("base ref を特定できません。--base で明示してください。")
 
 
 def measure(base: str, head: str) -> Report:
+    # Same-kind guard as resolve_base: never hand git an unresolvable revision.
+    if not ref_exists(head):
+        raise MeasurementError(f"head ref '{head}' を解決できません。")
     raw = _git(["diff", "--numstat", "-z", "-M", f"{base}...{head}"])
     return build_report(parse_numstat(raw), base, head)
 
@@ -303,8 +380,8 @@ def render_text(report: Report) -> str:
         "-" * 38,
         f"REVIEW_LINES: {review.added} / {REVIEW_MAX_LINES}",
         f"REVIEW_FILES: {review.files} / {REVIEW_MAX_FILES}",
-        f"OBSERVATIONS: {', '.join(observations(report.paths[CATEGORY_REVIEW])) or '-'}"
-        "  (推定)",
+        f"OBSERVATIONS: {', '.join(report.observation_classes) or '-'}"
+        f"  ({len(report.observation_classes)} / {OBSERVATION_MAX_CLASSES} 分類, 推定)",
         f"VERDICT: {report.verdict}",
     ]
     for reason in report.reasons:
@@ -316,7 +393,7 @@ def render_text(report: Report) -> str:
 
 def render_markdown(report: Report) -> str:
     review = report.review
-    observed = ", ".join(observations(report.paths[CATEGORY_REVIEW])) or "-"
+    observed = ", ".join(report.observation_classes) or "-"
     lines = [
         "## PR Budget (AGENTS.md §19.2 / §19.4)",
         "",
@@ -348,7 +425,13 @@ def render_json(report: Report) -> str:
             "review_max_lines": REVIEW_MAX_LINES,
             "review_max_files": REVIEW_MAX_FILES,
             "test_advisory_lines": TEST_ADVISORY_LINES,
+            "observation_max_classes": OBSERVATION_MAX_CLASSES,
         },
+        # The declaration in the PR body overrides these estimated classes;
+        # over_lines / over_files are objective and cannot be overridden.
+        "over_lines": report.over_lines,
+        "over_files": report.over_files,
+        "over_observations": report.over_observations,
         "buckets": {
             name: {
                 "added": report.buckets[name].added,
@@ -357,7 +440,7 @@ def render_json(report: Report) -> str:
             }
             for name in CATEGORY_ORDER
         },
-        "observations": observations(report.paths[CATEGORY_REVIEW]),
+        "observations": report.observation_classes,
         "reasons": report.reasons,
         "advisories": report.advisories,
     }

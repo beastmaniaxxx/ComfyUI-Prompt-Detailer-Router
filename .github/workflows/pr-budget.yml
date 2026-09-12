@@ -36,45 +36,4 @@ jobs:
         env:
           # PR本文はシェルへ展開せず環境変数経由で渡す（スクリプト注入対策）。
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import re
-          import sys
-
-          with open("budget.json", encoding="utf-8") as handle:
-              report = json.load(handle)
-
-          body = os.environ.get("PR_BODY") or ""
-          problems = []
-
-          if "## PR Budget" not in body:
-              problems.append(
-                  "PR本文に `## PR Budget` ブロックがありません。"
-                  "`python tools/pr_budget.py --format markdown` の出力を貼ってください"
-                  "（AGENTS.md §19.4）。"
-              )
-
-          if report["verdict"] == "OVER_BUDGET":
-              match = re.search(r"OVER_BUDGET_REASON:[ \t]*(.*)", body)
-              reason = match.group(1).strip() if match else ""
-              if reason in ("", "N/A", "なし"):
-                  problems.append(
-                      "VERDICT: OVER_BUDGET です。"
-                      "PRを分割するか、`OVER_BUDGET_REASON` に分割しない理由を"
-                      "記載してください（AGENTS.md §19.2 / §19.3 / §19.4）。"
-                  )
-
-          for reason in report["reasons"]:
-              print(f"over budget: {reason}")
-          for advisory in report["advisories"]:
-              print(f"advisory: {advisory}")
-
-          if problems:
-              for problem in problems:
-                  print(f"::error::{problem}")
-              sys.exit(1)
-
-          print("PR Budget declaration OK")
-          PY
+        run: python tools/check_pr_declaration.py budget.json

@@ -167,6 +167,67 @@ def test_large_test_diff_raises_an_advisory_only() -> None:
     assert any("TEST_LINES" in advisory for advisory in report.advisories)
 
 
+def test_three_observation_classes_are_over_budget() -> None:
+    """§19.2's third split condition, not only lines and files."""
+    report = _report(
+        [
+            (50, 0, "prompt_detailer_router/infrastructure/preset_loader.py"),  # A
+            (50, 0, "prompt_detailer_router/domain/detailer_plan.py"),  # C
+            (10, 0, "prompt_detailer_router/resources/presets/face.json"),  # D
+        ]
+    )
+    assert report.observation_classes == [
+        "A 外部入力検証",
+        "C ドメイン不変条件",
+        "D preset越境",
+    ]
+    assert report.over_observations is True
+    assert report.verdict == "OVER_BUDGET"
+    assert any("OBSERVATIONS" in reason for reason in report.reasons)
+
+
+def test_two_observation_classes_stay_within_budget() -> None:
+    report = _report(
+        [
+            (50, 0, "prompt_detailer_router/infrastructure/preset_loader.py"),  # A
+            (50, 0, "prompt_detailer_router/domain/detailer_plan.py"),  # C
+        ]
+    )
+    assert report.over_observations is False
+    assert report.verdict == "WITHIN_BUDGET"
+
+
+def test_test_class_is_excluded_from_the_observation_count() -> None:
+    """§14 puts tests in every implementation PR, so F must not count (§19.2)."""
+    report = _report(
+        [
+            (50, 0, "prompt_detailer_router/infrastructure/preset_loader.py"),  # A
+            (50, 0, "prompt_detailer_router/domain/detailer_plan.py"),  # C
+            (900, 0, "tests/unit/test_preset_loader.py"),  # F -- not counted
+        ]
+    )
+    assert pr_budget.OBSERVATION_LABEL_TEST not in report.observation_classes
+    assert report.verdict == "WITHIN_BUDGET"
+
+
+def test_observation_count_appears_in_every_output_format() -> None:
+    import json as json_module
+
+    report = _report(
+        [
+            (50, 0, "prompt_detailer_router/infrastructure/a.py"),
+            (50, 0, "prompt_detailer_router/domain/b.py"),
+            (10, 0, "prompt_detailer_router/resources/presets/c.json"),
+        ]
+    )
+    assert "OVER_BUDGET" in pr_budget.render_text(report)
+    assert "OVER_BUDGET" in pr_budget.render_markdown(report)
+    payload = json_module.loads(pr_budget.render_json(report))
+    assert payload["over_observations"] is True
+    assert len(payload["observations"]) == 3
+    assert payload["thresholds"]["observation_max_classes"] == 3
+
+
 def test_observations_are_deduplicated_and_exclude_unmatched_paths() -> None:
     found = pr_budget.observations(
         [
@@ -192,6 +253,73 @@ def test_markdown_output_contains_the_declaration_fields() -> None:
         "OVER_BUDGET_REASON:",
     ):
         assert key in rendered
+
+
+# --- Base ref resolution ----------------------------------------------------
+
+
+@pytest.fixture
+def fake_refs(monkeypatch):
+    """Control which refs 'exist' without touching a real repository."""
+
+    def install(existing: set[str], gh_base: str | None = None):
+        monkeypatch.setattr(pr_budget, "ref_exists", lambda ref: ref in existing)
+        monkeypatch.setattr(pr_budget, "base_from_gh", lambda: gh_base)
+
+    return install
+
+
+def test_resolve_ref_prefers_the_remote_tracking_form(fake_refs) -> None:
+    fake_refs({"origin/main", "main"})
+    assert pr_budget.resolve_ref("main") == "origin/main"
+
+
+def test_resolve_ref_falls_back_to_a_local_only_branch(fake_refs) -> None:
+    fake_refs({"main"})
+    assert pr_budget.resolve_ref("main") == "main"
+
+
+def test_resolve_ref_returns_none_when_unresolvable(fake_refs) -> None:
+    fake_refs(set())
+    assert pr_budget.resolve_ref("main") is None
+
+
+def test_gh_base_name_is_resolved_to_a_remote_tracking_ref(fake_refs) -> None:
+    """A fresh clone has origin/main but no local main branch."""
+    fake_refs({"origin/main"}, gh_base="main")
+    assert pr_budget.resolve_base(None) == "origin/main"
+
+
+def test_unresolvable_gh_base_falls_through_to_the_defaults(fake_refs) -> None:
+    fake_refs({"origin/develop"}, gh_base="deleted-branch")
+    assert pr_budget.resolve_base(None) == "origin/develop"
+
+
+def test_explicit_base_is_resolved_to_a_remote_tracking_ref(fake_refs) -> None:
+    fake_refs({"origin/feature"})
+    assert pr_budget.resolve_base("feature") == "origin/feature"
+
+
+def test_unresolvable_explicit_base_raises_a_usable_message(fake_refs) -> None:
+    fake_refs({"origin/main"})
+    with pytest.raises(pr_budget.MeasurementError) as excinfo:
+        pr_budget.resolve_base("only-on-remote")
+    message = str(excinfo.value)
+    assert "only-on-remote" in message
+    assert "git fetch" in message
+
+
+def test_no_candidate_resolves_raises(fake_refs) -> None:
+    fake_refs(set())
+    with pytest.raises(pr_budget.MeasurementError):
+        pr_budget.resolve_base(None)
+
+
+def test_measure_rejects_an_unresolvable_head(fake_refs) -> None:
+    fake_refs({"origin/main"})
+    with pytest.raises(pr_budget.MeasurementError) as excinfo:
+        pr_budget.measure("origin/main", "no-such-head")
+    assert "no-such-head" in str(excinfo.value)
 
 
 class _FakeStream:
