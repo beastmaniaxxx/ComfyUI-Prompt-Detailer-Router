@@ -68,6 +68,13 @@ After all parallel research completes, synthesize implementation brief before st
 - If prerequisites incomplete, execute them first or warn the user
 - Use `_Boundary:_` annotations to understand the task's component scope
 
+**Resolve the PR slice** (AGENTS.md §19.5):
+- Read the `_PR: <slice-name>_` annotations on the major tasks. A major task without one belongs to the slice of the nearest preceding annotated major task
+- The **current slice** is the one owning the first pending sub-task in the queue
+- In autonomous mode, truncate the queue at the end of the current slice. Do NOT start a sub-task belonging to the next slice — that work belongs to a separate PR
+- In manual mode, honor the explicitly requested task numbers, but warn if they span more than one slice
+- If `tasks.md` carries no `_PR:_` annotations at all, treat every major task as its own slice and say so in the final report, so the author can decide whether to widen the PR
+
 ## Step 3: Execute Implementation
 
 ### Autonomous Mode (sub-agent dispatch)
@@ -139,6 +146,12 @@ Rationale: without this gate, a finding about undefined behavior produces a code
 - Use `git add <file1> <file2> ...` with explicit file paths
 - Commit message format: `feat(<feature-name>): <task description>`
 
+**e-1) Measure the PR budget** (AGENTS.md §19.4):
+- After each commit, run `python tools/pr_budget.py --no-fail` (add `--base <ref>` when the PR base is not auto-detectable, e.g. a feature integration branch)
+- Keep only the one-line result (`REVIEW_LINES: n / 1500 — VERDICT`) in the iteration summary
+- If `VERDICT: OVER_BUDGET` appears **before** the slice ends, stop the run immediately and report it. Do not keep implementing into an already-oversized PR — the split is cheap now and expensive after the remaining tasks land
+- The measurement is advisory for TEST lines: only the REVIEW bucket gates the run (§19.2)
+
 **f) Record learnings**:
 - If this task revealed cross-cutting insights, append a one-line note to the `## Implementation Notes` section at the bottom of tasks.md
 
@@ -191,7 +204,20 @@ Before writing any code, read the relevant sections of requirements.md and desig
 - **REVIEW**: Apply `kiro-review` before marking the task complete. If the host supports fresh subagents in manual mode, use a fresh reviewer; otherwise perform the review in the main context using the `kiro-review` protocol. Do NOT continue until the verdict is parseably `APPROVED`.
 - **MARK COMPLETE**: Only after review returns `APPROVED`, apply `kiro-verify-completion`, then update the checkbox from `- [ ]` to `- [x]` in tasks.md.
 
-## Step 4: Final Validation
+## Step 4: Slice Completion
+
+When the last sub-task of the current slice is `[x]` and committed, **stop the run**. Do not continue into the next slice (AGENTS.md §19.5).
+
+Report, so the author can open the PR without re-deriving anything:
+- The slice name and the tasks it covered
+- The PR budget declaration block: `python tools/pr_budget.py --format markdown` (paste-ready for the PR body per AGENTS.md §19.4)
+- The suggested branch name `feat/<feature>_<slice-name>` and PR base
+- Whether `VERDICT` is `WITHIN_BUDGET`; if `OVER_BUDGET`, the split options or the §19.3 reason it cannot be split
+- The next slice name, so re-running `/kiro-impl $1` after the PR merges resumes there
+
+Run the feature-level gate in Step 4.1 only when the finished slice is the **last** one.
+
+## Step 4.1: Final Validation
 
 **Autonomous mode**:
 - After all tasks complete, run `/kiro-validate-impl $1` as a GO/NO-GO gate
@@ -225,12 +251,14 @@ For tasks that add or change behavior, enforce RED → GREEN with a feature flag
 - **Bounded Debug**: Max 3 debug rounds per task (debug + re-implementation per round); if still failing → BLOCKED
 - **Bounded Remediation**: Cap final-validation remediation at 3 rounds
 - **Ripple Check**: Every implementer and remediation dispatch must return a `## Ripple Report` (AGENTS.md §16.4); a report with an empty `SEARCH_COMMANDS` is invalid and must be rejected
+- **Slice-Bounded Execution**: Stop at the end of the current `_PR:_` slice (AGENTS.md §19.5). Never implement across a slice boundary in one run — that produces a PR that cannot be split afterwards
+- **Budget Measured, Not Remembered**: Run `tools/pr_budget.py` after every commit and report the declaration block at slice end (AGENTS.md §19.4). Never assert a PR is within budget without the tool's output
 
 ## Output Description
 
-**Autonomous mode**: For each task, report: task ID, implementer status, reviewer verdict, files changed, commit hash. After all tasks: final validation result.
+**Autonomous mode**: For each task, report: task ID, implementer status, reviewer verdict, files changed, commit hash, and the one-line PR budget result. At slice end: the Step 4 slice-completion report. After the last slice: final validation result.
 
-**Manual mode**: Tasks executed with test results. Status of completed/remaining tasks.
+**Manual mode**: Tasks executed with test results. Status of completed/remaining tasks, plus the current PR budget result.
 
 **Format**: Concise, in the language specified in spec.json.
 

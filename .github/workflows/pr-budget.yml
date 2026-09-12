@@ -1,0 +1,39 @@
+name: PR Budget
+
+# AGENTS.md §19.4: PR規模の計測を人間の記憶に任せず、PR作成・更新時に必ず実行する。
+on:
+  pull_request:
+    # `edited` を含めることで、申告ブロックを追記したあと再実行できる。
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 三点diff (base...head) の merge-base 解決に全履歴が要る。
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Measure diff against the PR base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          python tools/pr_budget.py --base "origin/${BASE_REF}" \
+            --format markdown --no-fail | tee -a "$GITHUB_STEP_SUMMARY"
+          python tools/pr_budget.py --base "origin/${BASE_REF}" \
+            --format json --no-fail > budget.json
+
+      - name: Enforce declaration (AGENTS.md §19.4)
+        env:
+          # PR本文はシェルへ展開せず環境変数経由で渡す（スクリプト注入対策）。
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python tools/check_pr_declaration.py budget.json

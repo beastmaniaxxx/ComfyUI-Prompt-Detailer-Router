@@ -1,0 +1,5 @@
+{
+  "id": "extraction_repair_v1",
+  "version": "1.0",
+  "text": "Your previous reply could not be used: it was either not valid JSON or it did not conform to the supplied response schema. Produce the extraction again for the same original prompt and the same requested scopes, and return a single JSON object that conforms to the supplied response schema. Return only that JSON object: no Markdown, no code fences, no commentary before or after it. All extraction rules from the previous instructions still apply without change; in particular every feature string must remain a verbatim substring of the original prompt."
+}

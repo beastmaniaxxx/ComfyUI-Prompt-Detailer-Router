@@ -60,6 +60,43 @@ def reject_unknown_keys(
         raise ConfigurationError(f"{what} has unknown fields: {', '.join(unknown)}.")
 
 
+def require_keys(data: Mapping[str, object], keys: Iterable[str], what: str) -> None:
+    """Reject config objects missing any of ``keys``.
+
+    Every missing key is reported at once so a user editing a resource file does
+    not have to rediscover them one round-trip at a time.
+    """
+
+    missing = [key for key in keys if key not in data]
+    if missing:
+        raise ConfigurationError(
+            f"{what} is missing required keys: {', '.join(missing)}"
+        )
+
+
+def require_str_fields(
+    data: Mapping[str, object], keys: Iterable[str], what: str
+) -> None:
+    """Require ``keys`` to hold non-blank strings.
+
+    Callers must have checked key presence first (see :func:`require_keys`).
+    A blank required string would yield an empty/degenerate prompt at build time
+    (e.g. an empty ``upscale_prompt``); reject it at load instead.
+    """
+
+    for key in keys:
+        value = data[key]
+        if not isinstance(value, str):
+            raise ConfigurationError(
+                f"{what} field '{key}' must be a string, got "
+                f"{type(value).__name__}."
+            )
+        if not value.strip():
+            raise ConfigurationError(
+                f"{what} field '{key}' must not be empty or whitespace-only."
+            )
+
+
 def read_config_json(resource, what: str) -> dict:
     """Read a resource as UTF-8 text and parse it as a config JSON object.
 

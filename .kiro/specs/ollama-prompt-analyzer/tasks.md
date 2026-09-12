@@ -1,8 +1,9 @@
 # Implementation Plan
 
-- [ ] 1. 基盤: 共有検証経路と LLM リソース
+- [x] 1. 基盤: 共有検証経路と LLM リソース
+  - _PR: impl-domain_
 
-- [ ] 1.1 必須文字列検証を共有ヘルパへ昇格し、既存 preset 読み込みを委譲へ置き換える
+- [x] 1.1 必須文字列検証を共有ヘルパへ昇格し、既存 preset 読み込みを委譲へ置き換える
   - 必須文字列の型検査と「空白のみ」拒否を、設定 JSON 共有ヘルパの公開関数として提供する
   - 既存の preset 読み込みが持つ同等の private 実装を、この共有関数への委譲に置き換える
   - 振る舞いを変えない。エラーメッセージの文面と例外種別を現行と一致させる
@@ -10,7 +11,7 @@
   - _Requirements: 10.15_
   - _Boundary: config_json, preset_loader_
 
-- [ ] 1.2 LLM 向けリソースファイル 3 種を作成する
+- [x] 1.2 LLM 向けリソースファイル 3 種を作成する
   - 抽出用 system prompt を作成し、明記された事実のみの抽出、逐語部分文字列での返却、言い換え・要約・語形変化・翻訳の禁止、否定記述からの抽出禁止、Markdown を返さないこと、被写体ヒントを補完の根拠にしないことを指示文として含める
   - 修復指示 prompt を作成し、直前の応答が不正 JSON または Schema 違反であった場合に再出力させる指示を含める
   - scope 別対象情報定義を作成し、対応 7 scope それぞれの対象情報を非空文字列で定義する
@@ -19,7 +20,7 @@
   - _Requirements: 2.3, 2.5, 2.6, 2.8, 2.11, 2.13_
   - _Boundary: resources/prompts_
 
-- [ ] 1.3 LLM リソース loader を共有検証経路の上に実装する
+- [x] 1.3 LLM リソース loader を共有検証経路の上に実装する
   - prompt リソースと scope 別対象情報定義を読み込み、不変な値オブジェクトとして返す
   - 検証は既存の共有ヘルパ（設定 JSON 読み込み、未知キー拒否、必須文字列検査、安全な id 形式）経由でのみ行い、専用の検証実装を持たない
   - 対応 7 scope のいずれかの定義を欠く場合を拒否し、欠落 scope を空定義で代替しない
@@ -29,7 +30,7 @@
   - _Depends: 1.1, 1.2_
   - _Boundary: llm_prompt_loader_
 
-- [ ] 1.4 リソース loader の注入束と既定実装を用意する
+- [x] 1.4 リソース loader の注入束と既定実装を用意する
   - upscale preset / profile / detailer preset / 禁止語ポリシー / builder template / prompt / scope 定義 / response schema の各読み込みと、prompt builder version・Plan schema version の 2 定数を 1 つの束として定義する
   - 既定実装は上流 core の loader をそのまま束ねたものとする
   - 束のフィールドを差し替えるだけで、リソースの version 変更と異常系をテストへ注入できる
@@ -40,9 +41,10 @@
   - _Depends: 1.3_
   - _Boundary: resource_loaders_
 
-- [ ] 2. Domain: 純粋ロジック
+- [x] 2. Domain: 純粋ロジック
+  - _PR: impl-domain_
 
-- [ ] 2.1 失敗分類と再試行可否を単一の正本として実装する
+- [x] 2.1 失敗分類と再試行可否を単一の正本として実装する
   - 失敗を 8 分類（接続失敗・タイムアウト・再試行可能な HTTP・再試行不可の HTTP・利用不能な応答本文・JSON 解析失敗・Schema 違反・設定エラー）として定義する
   - HTTP ステータスから分類への対応表を全域で網羅し、2xx 以外に未定義の値を残さない
   - 再試行可能な失敗を 6 種、再試行不可を 2 種として定義する
@@ -52,7 +54,7 @@
   - _Requirements: 4.1, 4.2, 4.4, 4.7, 4.12_
   - _Boundary: analyzer_failures_
 
-- [ ] 2.2 (P) 接続先 URL の検証と endpoint 構成を実装する
+- [x] 2.2 (P) 接続先 URL の検証と endpoint 構成を実装する
   - URL の scheme・userinfo・ホスト・ポート・パス・クエリ・フラグメントを決定表どおりに判定する
   - ホストは角括弧付き IPv6 literal、IPv4 ドット 4 組、ラベル制約を満たす DNS 名のみを許容し、それ以外を通信前に設定エラーとする
   - 判定を通過した URL から要求先 endpoint を組み立て、IPv6 の場合は角括弧で authority を構成する。パスは常に所定の値のみとし、パス prefix を持つ配置を非対応とする
@@ -62,7 +64,7 @@
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.20, 11.4_
   - _Boundary: connection_settings_
 
-- [ ] 2.3 数値設定と keep_alive の検証を実装する
+- [x] 2.3 数値設定と keep_alive の検証を実装する
   - timeout の有効範囲を検証し、通過値を小数第 3 位へ切り捨てた実効 timeout を返す。境界値への丸め込みや既定値への置換を行わない。非有限値を拒否する
   - temperature の負値・非有限を拒否し、model 名の空文字・空白のみを拒否して暗黙の既定モデル名で代替しない
   - keep_alive を単位なし十進数または単一単位付き文字列に限定し、複合単位表記を非対応とする
@@ -71,7 +73,7 @@
   - _Requirements: 10.6, 10.7, 10.8, 10.9, 10.12, 10.17, 10.18, 10.19, 10.22_
   - _Boundary: connection_settings_
 
-- [ ] 2.4 (P) 抽出特徴の逐語根拠照合を実装する
+- [x] 2.4 (P) 抽出特徴の逐語根拠照合を実装する
   - 特徴文字列と元プロンプトの双方へ Unicode NFC 正規化と大小文字の畳み込みを適用する
   - 変換後の特徴が変換後の元プロンプトの部分文字列であり、かつ一致位置の直前・直後がいずれも Unicode の英数字でないことを検証する。文字列の端は境界とみなす
   - 処理順を「前後空白の除去 → 空要素の破棄 → 根拠照合」とし、後続へ渡す値を空白除去後の元表記とする
@@ -81,7 +83,7 @@
   - _Requirements: 3.8, 3.9, 3.11, 3.15, 3.16, 3.17, 3.19_
   - _Boundary: evidence_
 
-- [ ] 2.5 (P) キャッシュキーの構成要素と算出を実装する
+- [x] 2.5 (P) キャッシュキーの構成要素と算出を実装する
   - 元プロンプト、正規化済み scope 列、破棄した未対応 scope 列、被写体ヒント、正規化接続先識別子、model 名、seed、temperature、実効 timeout、failure_mode、および出力に影響する全リソースの id と version を構成要素として保持する
   - keep_alive・UI 表示設定・診断の表示形式を構成要素に含めない
   - 構成要素を正準 JSON へ直列化してハッシュ化し、文字列連結による境界の曖昧さを避ける
@@ -89,7 +91,7 @@
   - _Requirements: 11.3, 11.4, 11.5, 11.13_
   - _Boundary: analyzer_cache_key_
 
-- [ ] 2.6 (P) warning と diagnostics の順序付き組み立てを実装する
+- [x] 2.6 (P) warning と diagnostics の順序付き組み立てを実装する
   - warning を 10 種の事象枠として定義し、該当した事象のみを固定順で出力する。事象が皆無なら空文字を返す
   - warning の各行を、利用者が原因と対処を判断できる自然文とする
   - LLM 由来の warning を、LLM 由来と識別できる形で含める
@@ -102,6 +104,7 @@
   - _Boundary: analyzer_report_
 
 - [ ] 3. Infrastructure: 通信・応答処理・資源
+  - _PR: impl-infra_
 
 - [ ] 3.1 (P) Ollama への HTTP transport を実装する
   - 差し替え可能な transport 契約と、標準ライブラリによる既定実装を提供する。新規の外部依存を追加しない
@@ -181,6 +184,7 @@
   - _Boundary: preset_catalog_
 
 - [ ] 4. Application: 実行経路の調停
+  - _PR: impl-app_
 
 - [ ] 4.1 設定検証と資源記述子確定の前段を実装する
   - 実行順序を「設定検証の一括実行 → 資源記述子の確定 → 空プロンプト判定 → キャッシュ照会」に固定する
@@ -238,6 +242,7 @@
   - _Depends: 2.5, 3.6, 4.4_
 
 - [ ] 5. 統合: ComfyUI ノード層と登録
+  - _PR: impl-app_
 
 - [ ] 5.1 Analyzer ノードクラスと ComfyUI 適合の seam を実装する
   - 12 入力を指定の型で受け付け、5 出力を宣言順で返す薄いアダプタとして実装する。業務ロジックを持たない
@@ -259,6 +264,7 @@
   - _Depends: 5.1_
 
 - [ ] 6. 検証: contract テストと統合テスト
+  - _PR: impl-verification_
 
 - [ ] 6.1 (P) LLM リソースの contract テストを追加する
   - system prompt・修復指示 prompt・scope 別対象情報定義のそれぞれについて、JSON 構文エラー・文字コードエラー・重複キー・非 object ルート・必須キー欠落・値の型不正・空白のみの必須文字列・未知フィールド・安全でない id 形式・ファイル内 id と要求 id の不一致の各異常系が拒否されることを検証する
@@ -331,3 +337,14 @@
   - 完了状態: 既定のテスト実行で実 Ollama 依存テストが収集されず、対象 Python バージョンで全テストが通る
   - _Requirements: 12.13, 12.14_
   - _Depends: 6.3, 6.4, 6.5, 6.6, 6.7_
+
+## Implementation Notes
+
+- 1.1: 共有ヘルパは `require_str_fields` に加えて `require_keys` も `config_json` へ昇格した。1.3 の「専用の検証実装を持たない」（Req 10.15）を満たすには必須キー検査も共有経路が要るため。`policy_loader` / `prompt_template_loader` は依然として同等の検査をインラインで持つ（1.1 の boundary 外のため未修正）。
+- 1.4: `load_response_schema` の既定実装は core の `schema_loader.load_schema` ではなく共有の `read_config_json` を経由する。束が Analyzer にとって Schema の唯一の供給点であり、手編集された Schema ファイルは生の `JSONDecodeError` ではなく設定エラーとして届く必要があるため（Req 10.16 / 12.21）。core の cached validator 経路は変更していない。
+- 1.4: 完了条件「注入した response schema が payload の射影と応答検証の双方へ到達する」は、消費側（3.2 の射影・3.4 の復号）が未実装のため、本タスクでは「供給点が単一であること」と「1 回の読み込みから両導出が注入内容を反映すること」までの検証に留めた。全経路の到達検証は 6.2 が所有する。
+
+- 2.2: `http://host:`（ポート空）は RFC 3986 の読みに従い「省略」として scheme 既定ポートへ解決する。Req 10.1 のポート行は空ポートを明示していないため、構文不正ではなく省略として扱った。
+- 2.2: IPv4 射影 IPv6（`[::ffff:127.0.0.1]`）は `ipaddress` の正規形 `::ffff:7f00:1` になる。`OllamaEndpoint.host` は正規形を保持する。
+- 2.3: `validate_model_name` は前後空白の除去を行わず入力値をそのまま返す。Req 10.6 は空文字・空白のみの拒否のみを定めており、正規化規則は仕様に無いため実装で発明しない（§21.3）。
+- 2.6: `render_error_message` は `failure_mode` / 失敗分類 / HTTP 本文要約の 3 項目を failure から補って出力する（失敗時点で確定しているため）。report 自体へは記録せず、同一 failure に対し常に同一文字列を返す。

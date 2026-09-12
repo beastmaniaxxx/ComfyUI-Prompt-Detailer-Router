@@ -14,7 +14,22 @@ from prompt_detailer_router.infrastructure import (
 )
 from prompt_detailer_router.infrastructure.resource_ids import safe_resource_id
 
-UNSAFE_IDS = ["/tmp/pdr-secret", "../secret", "a/b", "a.b", "..", "", "a\\b", "with space"]
+UNSAFE_IDS = [
+    "/tmp/pdr-secret",
+    "../secret",
+    "a/b",
+    "a.b",
+    "..",
+    "",
+    "a\\b",
+    "with space",
+    # `$` matches before a trailing newline, so a `^...$` check let these pass
+    # while the id carried a control character into path resolution.
+    "face\n",
+    "face\r",
+    "face\r\n",
+    "face\n../secret",
+]
 
 
 @pytest.mark.parametrize("name", UNSAFE_IDS)
