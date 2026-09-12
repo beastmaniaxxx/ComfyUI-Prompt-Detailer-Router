@@ -11,6 +11,7 @@ Use whichever pattern fits the work breakdown:
 
 ### Major + Sub-task structure
 - [ ] {{MAJOR_NUMBER}}. {{MAJOR_TASK_SUMMARY}}
+  - _PR: {{SLICE_NAME}}_ *(PR slice this major task belongs to. See AGENTS.md §19.5.)*
 - [ ] {{MAJOR_NUMBER}}.{{SUB_NUMBER}} {{SUB_TASK_DESCRIPTION}}{{SUB_PARALLEL_MARK}}
   - {{DETAIL_ITEM_1}}
   - {{DETAIL_ITEM_2}}
@@ -19,6 +20,8 @@ Use whichever pattern fits the work breakdown:
   - _Boundary: {{COMPONENT_NAMES}}_ *(Only for (P) tasks. Omit when scope is obvious.)*
   - _Depends: {{TASK_IDS}}_ *(Only for non-obvious cross-boundary dependencies. Most tasks omit this.)*
 
+> **PR slice**: Every major task carries `_PR: <slice-name>_` (`^[a-z0-9-]+$`). One slice = one PR; the branch is `feat/<feature>_<slice-name>`. `kiro-impl` stops at the slice boundary, so this annotation is where the PR split is decided. A major task without the annotation inherits the nearest preceding one.
+>
 > **Parallel marker**: Append ` (P)` only to tasks that can be executed in parallel. Omit the marker when running in `--sequential` mode.
 >
 > **Optional test coverage**: When a sub-task is deferrable test work tied to acceptance criteria, mark the checkbox as `- [ ]*` and explain the referenced requirements in the detail bullets.
