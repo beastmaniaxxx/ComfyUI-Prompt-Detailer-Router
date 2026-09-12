@@ -60,6 +60,7 @@ After all parallel research completes, synthesize findings before generating tas
 - Keep normal implementation tasks within a single responsibility boundary; if work crosses boundaries, make it an explicit integration task
 - Collapse single-subtask structures by promoting them to major tasks and avoid duplicating details on container-only major tasks (use template patterns accordingly)
 - Apply `(P)` markers to tasks that satisfy parallel criteria (omit markers when sequential mode requested)
+- Assign PR slices: annotate each major task with `_PR: <slice-name>_` (AGENTS.md §19.5). This is where the PR split is decided — not at PR creation time. Group major tasks into slices whose dependencies close in one direction, keep each slice inside the AGENTS.md §19.2 thresholds (review-bearing source only; test lines do not count), and never split the combinations AGENTS.md §19.3 requires to ship together (a JSON Schema and the loader/codec that reads it; all presets; a Ripple Check's in-boundary range). Slice names are `^[a-z0-9-]+$` and become the branch suffix `feat/<feature>_<slice-name>`
 - Mark optional test coverage subtasks with `- [ ]*` only when they strictly cover acceptance criteria already satisfied by core implementation and can be deferred post-MVP
 - If existing tasks.md found, merge with new content
 
@@ -76,6 +77,7 @@ After all parallel research completes, synthesize findings before generating tas
   - Each executable sub-task includes an observable completion bullet
   - No implicit prerequisites remain hidden
   - `_Depends:_`, `_Boundary:_`, and `(P)` markers still match the dependency graph and architecture boundaries
+  - Every major task carries a `_PR:_` slice, each slice's dependencies close in one direction, and no slice splits a combination AGENTS.md §19.3 requires to ship together
 - If issues are task-plan-local, repair the draft and re-run the review gate before writing
 - Keep the review bounded to at most 2 repair passes
 - If review exposes a real requirements/design gap or contradiction, stop and send the user back to requirements/design instead of inventing filler tasks
@@ -130,6 +132,7 @@ Before writing `tasks.md`, run one lightweight independent sanity review of the 
 - **Task Integration**: Every task must connect to the system (no orphaned work)
 - **Boundary annotations**: Required for `(P)` tasks, recommended for all (`_Boundary: ComponentName_`)
 - **Explicit dependencies**: Cross-boundary non-obvious dependencies declared with `_Depends: X.X_`
+- **PR slices**: Every major task carries `_PR: <slice-name>_` (AGENTS.md §19.5). `kiro-impl` stops at slice boundaries, so an unsliced plan produces one oversized PR
 - **Executable deliverable granularity**: Each task must produce a verifiable deliverable (file, endpoint, UI component, config). Infrastructure tasks (project scaffolding, manifest, host integration, build config) must be explicit — never assume they exist
 - **Observable done state**: Each executable sub-task must include at least one detail bullet that makes the completed state visible without adding new bookkeeping fields
 - **No implicit prerequisites**: If a task requires a runtime, SDK, framework setup, or config file, that setup must be a separate preceding task

@@ -1,6 +1,7 @@
 # Implementation Plan
 
 - [x] 1. 基盤: 共有検証経路と LLM リソース
+  - _PR: impl-domain_
 
 - [x] 1.1 必須文字列検証を共有ヘルパへ昇格し、既存 preset 読み込みを委譲へ置き換える
   - 必須文字列の型検査と「空白のみ」拒否を、設定 JSON 共有ヘルパの公開関数として提供する
@@ -41,6 +42,7 @@
   - _Boundary: resource_loaders_
 
 - [x] 2. Domain: 純粋ロジック
+  - _PR: impl-domain_
 
 - [x] 2.1 失敗分類と再試行可否を単一の正本として実装する
   - 失敗を 8 分類（接続失敗・タイムアウト・再試行可能な HTTP・再試行不可の HTTP・利用不能な応答本文・JSON 解析失敗・Schema 違反・設定エラー）として定義する
@@ -102,6 +104,7 @@
   - _Boundary: analyzer_report_
 
 - [ ] 3. Infrastructure: 通信・応答処理・資源
+  - _PR: impl-infra_
 
 - [ ] 3.1 (P) Ollama への HTTP transport を実装する
   - 差し替え可能な transport 契約と、標準ライブラリによる既定実装を提供する。新規の外部依存を追加しない
@@ -181,6 +184,7 @@
   - _Boundary: preset_catalog_
 
 - [ ] 4. Application: 実行経路の調停
+  - _PR: impl-app_
 
 - [ ] 4.1 設定検証と資源記述子確定の前段を実装する
   - 実行順序を「設定検証の一括実行 → 資源記述子の確定 → 空プロンプト判定 → キャッシュ照会」に固定する
@@ -238,6 +242,7 @@
   - _Depends: 2.5, 3.6, 4.4_
 
 - [ ] 5. 統合: ComfyUI ノード層と登録
+  - _PR: impl-app_
 
 - [ ] 5.1 Analyzer ノードクラスと ComfyUI 適合の seam を実装する
   - 12 入力を指定の型で受け付け、5 出力を宣言順で返す薄いアダプタとして実装する。業務ロジックを持たない
@@ -259,6 +264,7 @@
   - _Depends: 5.1_
 
 - [ ] 6. 検証: contract テストと統合テスト
+  - _PR: impl-verification_
 
 - [ ] 6.1 (P) LLM リソースの contract テストを追加する
   - system prompt・修復指示 prompt・scope 別対象情報定義のそれぞれについて、JSON 構文エラー・文字コードエラー・重複キー・非 object ルート・必須キー欠落・値の型不正・空白のみの必須文字列・未知フィールド・安全でない id 形式・ファイル内 id と要求 id の不一致の各異常系が拒否されることを検証する
